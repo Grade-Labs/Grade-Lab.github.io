@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Grade Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: single centered column (max 720px), home = GPA band + class cards, class = grade header + categories + assignment list + final-exam calc */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --sunk:#e8ecf2; --line:#d5dbe5;
+  --fg:#16202e; --muted:#5b6778; --accent:#2f5bea; --accent-ink:#ffffff; --accent-soft:#e3e9fd;
+  --whatif:#8a4fd8; --whatif-soft:#efe6fb;
+  --gA:#1f8a4c; --gB:#2a72c9; --gC:#b8860b; --gD:#d0632a; --gF:#c8313b;
+  --display:"Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body:"Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --r:12px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f141c; --surface:#171e29; --sunk:#1f2836; --line:#2c3748;
+  --fg:#e7ecf3; --muted:#9aa6b8; --accent:#7b9bff; --accent-ink:#0c1220; --accent-soft:#1f2a48;
+  --whatif:#b98cff; --whatif-soft:#2b2140;
+  --gA:#4cc47e; --gB:#5ea6f5; --gC:#e0b341; --gD:#f08a52; --gF:#f2636c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f141c; --surface:#171e29; --sunk:#1f2836; --line:#2c3748;
+  --fg:#e7ecf3; --muted:#9aa6b8; --accent:#7b9bff; --accent-ink:#0c1220; --accent-soft:#1f2a48;
+  --whatif:#b98cff; --whatif-soft:#2b2140;
+  --gA:#4cc47e; --gB:#5ea6f5; --gC:#e0b341; --gD:#f08a52; --gF:#f2636c; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45}
+.wrap{max-width:1040px;margin:0 auto;padding-block:20px 60px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h1{font-size:1.9rem;font-weight:800}
+h2{font-size:1.25rem;font-weight:600}
+h3{font-size:1rem;font-weight:600}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:.82rem}
+.label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 14px;font-weight:500;font-size:.88rem}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--gF)}
+.btn.ghost{border-color:transparent;background:transparent}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.spread{justify-content:space-between}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.banner{background:var(--accent-soft);border-radius:var(--r);padding:10px 14px;font-size:.86rem;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.gpa{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.gpa .big{font-family:var(--display);font-size:2.6rem;font-weight:800;line-height:1}
+.gpa .proj{color:var(--whatif);font-size:.85rem;font-weight:600;margin-top:4px}
+.classes{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:10px}
+.stack{display:flex;flex-direction:column;gap:8px}
+.narrow{max-width:760px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.tabs{display:inline-flex;background:var(--sunk);border-radius:999px;padding:3px;gap:2px;flex-wrap:wrap}
+.tabs button{border:0;background:transparent;border-radius:999px;padding:7px 16px;font-size:.9rem;font-weight:600;color:var(--muted)}
+.tabs button.on{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.glist{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px 12px;align-items:center}
+.glist select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.cls{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;text-align:left;width:100%}
+.cls:hover{border-color:var(--accent)}
+.cls .name{font-weight:600;overflow-wrap:anywhere}
+.chip{display:inline-block;font-size:.7rem;font-weight:600;letter-spacing:.04em;padding:2px 7px;border-radius:999px;background:var(--sunk);color:var(--muted);text-transform:uppercase}
+.chip.wi{background:var(--whatif-soft);color:var(--whatif)}
+.letter{width:46px;height:46px;border-radius:10px;display:grid;place-items:center;font-family:var(--display);font-weight:800;font-size:1.35rem;color:#fff}
+.lg{width:72px;height:72px;font-size:2.1rem;border-radius:14px}
+.L-A{background:var(--gA)} .L-B{background:var(--gB)} .L-C{background:var(--gC)} .L-D{background:var(--gD)} .L-F{background:var(--gF)} .L-none{background:var(--sunk);color:var(--muted)}
+.pct{font-family:var(--display);font-weight:600;font-size:1.15rem;text-align:right}
+.delta{font-size:.8rem;font-weight:600;color:var(--whatif)}
+.head{display:grid;grid-template-columns:auto minmax(0,1fr);gap:16px;align-items:center}
+.head .big{font-family:var(--display);font-size:2.4rem;font-weight:800;line-height:1}
+.seg{display:inline-flex;background:var(--sunk);border-radius:999px;padding:3px}
+.seg button{border:0;background:transparent;border-radius:999px;padding:6px 14px;font-size:.86rem;font-weight:600;color:var(--muted)}
+.seg button.on{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.seg button.on.wi{color:var(--whatif)}
+.cats{display:flex;flex-direction:column;gap:10px}
+.cat{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}
+.bar{grid-column:1/-1;height:8px;background:var(--sunk);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px}
+.alist{display:flex;flex-direction:column}
+.arow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.arow:first-child{border-top:0}
+.arow.changed .aname::after{content:"what-if";margin-left:8px;font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--whatif)}
+.arow.hypo{background:linear-gradient(90deg,var(--whatif-soft),transparent 70%);border-radius:8px;padding-left:8px}
+.aname{font-weight:500;overflow-wrap:anywhere}
+.score{display:flex;align-items:center;gap:4px}
+.score input{width:58px;padding:6px 6px;border:1px solid var(--line);border-radius:8px;background:var(--bg);text-align:right;font-variant-numeric:tabular-nums}
+.score input.max{width:52px;background:transparent}
+.wimode .score input.s{border-color:var(--whatif)}
+.apct{width:52px;text-align:right;font-weight:600;font-size:.88rem}
+.icon{border:0;background:transparent;color:var(--muted);font-size:1.1rem;padding:4px 6px;border-radius:6px;line-height:1}
+.icon:hover{color:var(--gF);background:var(--sunk)}
+.form{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.3fr) 70px 70px auto;gap:8px;align-items:end}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field input,.field select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);width:100%;min-width:0}
+.fcalc{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.answer{font-family:var(--display);font-size:1.6rem;font-weight:800}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+td,th{padding:6px 4px;text-align:left;border-top:1px solid var(--line);font-size:.88rem}
+th{font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;border-top:0}
+.ecats{display:flex;flex-direction:column;gap:8px}
+.ecat{display:grid;grid-template-columns:minmax(0,1fr) 84px auto;gap:8px;align-items:center}
+.egrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.86rem}
+@media (max-width:560px){
+  .form{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .form .wide{grid-column:1/-1}
+  .fcalc{grid-template-columns:1fr}
+  .egrid{grid-template-columns:1fr}
+  .gpa .big{font-size:2.1rem}
+}
+@media (prefers-reduced-motion: no-preference){.bar i{transition:width .3s ease}}
+</style>
+</head>
+<body>
+
+<div class="wrap" id="app"></div>
+
+<script>
+(function(){
+const KEY = 'gradelab.v1';
+const uid = () => Math.random().toString(36).slice(2,9);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- sample data ---------- */
+function A(name, cat, score, max){ return {id:uid(), name, cat, score, max}; }
+function sample(){
+  const calc = {id:uid(), name:'AP Calculus AB', teacher:'Period 2', level:'ap', credits:1, mode:'weighted',
+    categories:[{id:'t',name:'Tests',weight:50},{id:'q',name:'Quizzes',weight:30},{id:'h',name:'Homework',weight:20}], assignments:[]};
+  calc.assignments = [A('Unit 1 Test: Limits','t',41,50),A('Unit 2 Test: Derivatives','t',44,50),A('Quiz 2.1','q',9,10),A('Quiz 2.3','q',7,10),A('Quiz 3.1','q',8,10),A('HW 2.4','h',10,10),A('HW 2.6','h',8,10),A('HW 3.1','h',10,10),A('Unit 3 Test: Chain Rule','t',null,50)];
+  const eng = {id:uid(), name:'Honors English 10', teacher:'Period 4', level:'honors', credits:1, mode:'weighted',
+    categories:[{id:'e',name:'Essays',weight:40},{id:'r',name:'Reading checks',weight:30},{id:'p',name:'Participation',weight:30}], assignments:[]};
+  eng.assignments = [A('Personal narrative','e',88,100),A('Argument essay draft','e',82,100),A('Reading check: Ch. 1-4','r',18,20),A('Reading check: Ch. 5-9','r',15,20),A('Socratic seminar','p',25,25),A('Journal week 1-3','p',27,30)];
+  const chem = {id:uid(), name:'Chemistry', teacher:'Period 1', level:'regular', credits:1, mode:'points',
+    categories:[{id:'a',name:'All work',weight:100}], assignments:[]};
+  chem.assignments = [A('Lab: Density','a',23,25),A('Lab: Reaction types','a',20,25),A('Test: Atomic structure','a',78,100),A('Worksheet: Moles','a',14,15),A('Quiz: Stoichiometry','a',16,20)];
+  const hist = {id:uid(), name:'AP U.S. History', teacher:'Period 5', level:'ap', credits:1, mode:'weighted',
+    categories:[{id:'t',name:'Tests & DBQs',weight:60},{id:'c',name:'Classwork',weight:40}], assignments:[]};
+  hist.assignments = [A('Period 1-2 Test','t',68,80),A('DBQ: Colonial economies','t',5,7),A('Reading notes Ch. 3','c',10,10),A('Reading notes Ch. 4','c',9,10),A('Primary source analysis','c',17,20)];
+  const span = {id:uid(), name:'Spanish 2', teacher:'Period 6', level:'regular', credits:1, mode:'weighted',
+    categories:[{id:'s',name:'Assessments',weight:70},{id:'p',name:'Practice',weight:30}], assignments:[]};
+  span.assignments = [A('Vocab quiz 1','s',19,20),A('Oral presentation','s',45,50),A('Workbook p. 12-15','p',20,20),A('Duolingo week 3','p',8,10)];
+  calc.q1 = 88.4; eng.q1 = 91.2; chem.q1 = 84.0; hist.q1 = 79.3; span.q1 = 95.1;
+  return {sample:true, classes:[calc,eng,chem,hist,span]};
+}
+function load(){ try{ const t = localStorage.getItem(KEY); return t ? JSON.parse(t) : null; }catch(e){ return null; } }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+
+let S = load() || sample();
+const ui = {view:'home', tab:'grades', cid:null, wi:false, edit:false, confirm:null, starget:89.5, sv:{msg:'', err:'', copied:false}};
+
+/* ---------- grade math ---------- */
+const real = a => a.hypo ? null : num(a.score);
+const proj = a => (a.wi !== undefined && a.wi !== null && a.wi !== '') ? num(a.wi) : (a.hypo ? null : num(a.score));
+function num(v){ if(v === null || v === undefined || v === '') return null; const n = Number(v); return isFinite(n) ? n : null; }
+
+function catStats(c, pick){
+  return c.categories.map(cat => {
+    let s = 0, m = 0, n = 0;
+    c.assignments.forEach(a => { if(a.cat !== cat.id) return; const v = pick(a), mx = num(a.max); if(v === null || !mx) return; s += v; m += mx; n++; });
+    return {cat, pct: m ? s/m*100 : null, earned:s, possible:m, n};
+  });
+}
+function classPct(c, pick){
+  if(c.mode === 'points'){
+    let s=0,m=0; c.assignments.forEach(a => { const v = pick(a), mx = num(a.max); if(v===null || !mx) return; s+=v; m+=mx; });
+    return m ? s/m*100 : null;
+  }
+  const st = catStats(c, pick); let tw = 0, acc = 0;
+  st.forEach(x => { if(x.pct === null) return; const w = Number(x.cat.weight)||0; tw += w; acc += w*x.pct; });
+  return tw ? acc/tw : null;
+}
+function letter(p){ if(p === null) return null; return p >= 89.5 ? 'A' : p >= 79.5 ? 'B' : p >= 69.5 ? 'C' : p >= 59.5 ? 'D' : 'F'; }
+const PTS = {A:4,B:3,C:2,D:1,F:0};
+const BONUS = {regular:0, honors:0.5, ap:1};
+const LEVEL = {regular:'Regular', honors:'Honors', ap:'AP / IB'};
+function gpa(pick){
+  let cr=0, u=0, w=0;
+  S.classes.forEach(c => { const L = letter(semPct(c, pick)); if(!L) return; const k = Number(c.credits)||1; const p = PTS[L];
+    cr += k; u += p*k; w += (p + (p>0 ? BONUS[c.level]||0 : 0))*k; });
+  return cr ? {u:u/cr, w:w/cr} : null;
+}
+/* Semester = average of Quarter 1 and Quarter 2. The assignment list is the current quarter (Q2); Q1 is a finished percentage. */
+function abbr(l, d){ l = l || ''; const m = l.match(/(\d)/); return (/\bmp|marking/i.test(l) ? 'MP' : 'Q') + (m ? m[1] : d); }
+const Q1L = c => c.q1Label || 'Quarter 1', Q2L = c => c.q2Label || 'Quarter 2';
+function semPct(c, pick){ const q2 = classPct(c, pick), q1 = num(c.q1); if(q1 === null) return q2; if(q2 === null) return q1; return (q1 + q2) / 2; }
+const fmt = (p, d=1) => p === null ? '—' : p.toFixed(d);
+const hasWI = c => c.assignments.some(a => a.hypo || (a.wi !== undefined && a.wi !== null && a.wi !== ''));
+
+/* ---------- views ---------- */
+const app = document.getElementById('app');
+const cur = () => S.classes.find(c => c.id === ui.cid);
+
+function render(){
+  const inner = ui.view === 'sv' ? viewSV() : ui.view === 'class' && cur() ? (ui.edit ? viewEdit(cur()) : viewClass(cur())) : null;
+  app.innerHTML = inner === null ? viewHome() : `<div class="narrow">${inner}</div>`;
+  window.scrollTo && 0;
+}
+
+function sampleBanner(){
+  if(!S.sample) return '';
+  return `<div class="banner"><span>You are looking at <b>sample classes</b>. Edit them, or clear them and enter your own.</span>
+    ${ui.confirm === 'clear' ? `<span class="confirm">Delete all sample classes? <button class="btn danger" data-act="clearAll">Delete</button><button class="btn" data-act="cancel">Keep</button></span>`
+      : `<button class="btn" data-act="askClear">Start fresh</button>`}</div>`;
+}
+
+function viewGPA(g, gp, anyWI){
+  return `<div class="gpa">
+    <div class="panel"><div class="label">Unweighted GPA</div><div class="big num">${g ? g.u.toFixed(2) : '—'}</div>${anyWI && gp ? `<div class="proj num">${gp.u.toFixed(2)} with what-ifs</div>` : ''}</div>
+    <div class="panel"><div class="label">Weighted GPA</div><div class="big num">${g ? g.w.toFixed(2) : '—'}</div>${anyWI && gp ? `<div class="proj num">${gp.w.toFixed(2)} with what-ifs</div>` : ''}</div></div>
+  <div class="panel"><h2 style="margin-bottom:4px">Which classes are weighted?</h2>
+    <p class="small muted" style="margin:0 0 14px">Honors adds 0.5 and AP/IB adds 1.0 to a passing grade. Change a class here if Grade Lab guessed wrong.</p>
+    <div class="glist">${S.classes.map(c => { const L = letter(semPct(c, real)); const p = L ? PTS[L] : null;
+      return `<span class="letter L-${L||'none'}" style="width:36px;height:36px;font-size:1rem">${L||'–'}</span>
+      <span style="min-width:0"><b style="overflow-wrap:anywhere">${esc(c.name)}</b><br><span class="small muted num">${p===null?'No grade yet':`${p.toFixed(1)} unweighted · ${(p + (p>0?BONUS[c.level]||0:0)).toFixed(1)} weighted`}</span></span>
+      <select aria-label="Level for ${esc(c.name)}" id="lvl-${c.id}" data-lvl="${c.id}">${Object.entries(LEVEL).map(([k,v])=>`<option value="${k}" ${c.level===k?'selected':''}>${v}</option>`).join('')}</select>`; }).join('')}</div></div>`;
+}
+function viewSchedule(){
+  const rows = S.classes.filter(c => c.period || c.room).sort((a,b) => (parseFloat(a.period)||99) - (parseFloat(b.period)||99));
+  if(!rows.length) return `<div class="panel muted">Your schedule appears here after you sync with StudentVUE.</div>`;
+  return `<div class="panel" style="overflow-x:auto"><table><thead><tr><th>Period</th><th>Class</th><th>Room</th><th>Teacher</th></tr></thead><tbody>
+    ${rows.map(c => `<tr><td class="num">${esc(c.period||'')}</td><td>${esc(c.name)}</td><td>${esc(c.room||'')}</td><td>${esc(c.staff||'')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function viewHome(){
+  const g = gpa(real), gp = gpa(proj);
+  const anyWI = S.classes.some(hasWI);
+  const showP = (a,b) => anyWI && gp && g && Math.abs(a-b) > 0.0005;
+  return `
+  <div class="top"><div><div class="label">Semester overview</div><h1>Grade Lab</h1></div>
+    <div class="row"><button class="btn primary" data-act="sv">${S.svLast ? 'Sync StudentVUE' : 'Connect StudentVUE'}</button><button class="btn" data-act="addClass">+ Add class</button></div></div>
+  ${S.svLast ? `<div class="small muted">Last synced from StudentVUE ${esc(new Date(S.svLast).toLocaleString())}</div>` : ''}
+  ${sampleBanner()}
+  <div><div class="tabs" role="tablist">${[['grades','Grades'],['gpa','GPA'],['schedule','Schedule']].map(([k,v]) => `<button role="tab" aria-selected="${ui.tab===k}" class="${ui.tab===k?'on':''}" data-act="tab" data-id="${k}">${v}</button>`).join('')}</div></div>
+  ${ui.tab === 'gpa' ? viewGPA(g, gp, anyWI) : ui.tab === 'schedule' ? viewSchedule() : `
+  <div class="gpa">
+    <div class="panel"><div class="label">Unweighted GPA</div><div class="big num">${g ? g.u.toFixed(2) : '—'}</div>
+      ${showP(gp?.u, g?.u) ? `<div class="proj num">${gp.u.toFixed(2)} with what-ifs</div>` : `<div class="small muted">4.0 scale</div>`}</div>
+    <div class="panel"><div class="label">Weighted GPA</div><div class="big num">${g ? g.w.toFixed(2) : '—'}</div>
+      ${showP(gp?.w, g?.w) ? `<div class="proj num">${gp.w.toFixed(2)} with what-ifs</div>` : `<div class="small muted">+0.5 Honors, +1.0 AP/IB</div>`}</div>
+  </div>
+  <div class="classes">
+    ${S.classes.length ? S.classes.map(c => {
+      const p = semPct(c, real), pp = semPct(c, proj), L = letter(p), q2 = classPct(c, real);
+      const d = hasWI(c) && p !== null && pp !== null && Math.abs(pp-p) >= 0.05 ? pp - p : null;
+      const qs = num(c.q1) !== null ? `${abbr(c.q1Label,1)} ${fmt(num(c.q1))} · ${abbr(c.q2Label,2)} ${fmt(q2)}` : `${abbr(c.q2Label,2)} only`;
+      return `<button class="cls" data-act="open" data-id="${c.id}">
+        <span class="letter L-${L||'none'}">${L||'–'}</span>
+        <span><span class="name">${c.period?`<span class="muted num">${esc(c.period)} · </span>`:''}${esc(c.name)}</span><br><span class="small muted">${esc(c.teacher)}${c.teacher?' · ':''}</span><span class="chip">${LEVEL[c.level]}</span>${hasWI(c)?' <span class="chip wi">what-if</span>':''}</span>
+        <span><div class="pct num">${p===null?'—':fmt(p)+'%'}</div><div class="small muted num" style="text-align:right">${d!==null?`<span class="delta">${d>0?'+':''}${d.toFixed(1)} what-if</span>`:qs}</div></span>
+      </button>`; }).join('') : `<div class="panel muted">No classes yet. Tap <b>Add class</b> to enter your first one.</div>`}
+  </div>`}
+  <p class="small muted">Class grades and GPA use the semester grade: the average of Quarter 1 and Quarter 2. Letter cutoffs: A 89.5, B 79.5, C 69.5, D 59.5. Grades are saved in this browser only.</p>`;
+}
+
+function summaryHTML(c){
+  const p = classPct(c, real), pp = classPct(c, proj), L = letter(ui.wi ? pp : p);
+  const shown = ui.wi ? pp : p;
+  const d = p !== null && pp !== null ? pp - p : null;
+  return `<div class="head"><span class="letter lg L-${L||'none'}">${L||'–'}</span>
+    <div><div class="label">${esc(Q2L(c))} grade${ui.wi?' with what-ifs':''}</div><div class="big num">${shown===null?'No grades yet':fmt(shown, 2)+'%'}</div>
+    <div class="small muted num">${ui.wi
+      ? (d !== null && Math.abs(d) >= 0.005 ? `<span class="delta">${d>0?'+':''}${d.toFixed(2)} points</span> vs. your real grade of ${fmt(p,2)}%` : 'What-if mode: change any score to see how your grade moves.')
+      : (hasWI(c) ? `With what-ifs: ${fmt(pp,2)}%` : (c.mode==='points' ? 'Total points' : 'Weighted by category'))}${!ui.wi && num(c.svPct)!==null ? `<br>StudentVUE shows ${fmt(num(c.svPct),2)}%${p!==null&&Math.abs(p-num(c.svPct))>=0.1?' (your teacher may drop scores or round differently)':''}`:''}</div></div></div>`;
+}
+function catsHTML(c){
+  if(c.mode === 'points'){
+    let s=0,m=0; c.assignments.forEach(a => { const v=(ui.wi?proj:real)(a), mx=num(a.max); if(v===null||!mx) return; s+=v; m+=mx; });
+    return `<div class="small muted num">${+s.toFixed(2)} of ${+m.toFixed(2)} points earned</div>`;
+  }
+  const st = catStats(c, ui.wi ? proj : real);
+  const tw = c.categories.reduce((t,x)=>t+(Number(x.weight)||0),0);
+  return `<div class="cats">${st.map(x => { const L = letter(x.pct);
+    return `<div class="cat"><span><b>${esc(x.cat.name)}</b> <span class="small muted num">${x.cat.weight}% of grade</span></span>
+      <span class="num"><b>${x.pct===null?'—':fmt(x.pct)+'%'}</b> <span class="small muted">${x.n?`${+x.earned.toFixed(2)}/${+x.possible.toFixed(2)}`:'nothing graded'}</span></span>
+      <span class="bar"><i class="L-${L||'none'}" style="width:${x.pct===null?0:Math.min(100,x.pct)}%"></i></span></div>`; }).join('')}
+    ${Math.abs(tw-100) > 0.01 ? `<div class="small" style="color:var(--gD)">Category weights add up to ${tw}%, not 100%. Edit the class to fix them.</div>`:''}</div>`;
+}
+function semBody(c){
+  const q2 = classPct(c, ui.wi ? proj : real), q1 = num(c.q1), t = num(ui.starget);
+  if(q1 === null) return `<div class="muted small">Type your ${Q1L(c)} grade above to see your semester grade. Until then, the semester grade is just your ${Q2L(c)} grade.</div>`;
+  const sem = semPct(c, ui.wi ? proj : real), L = letter(sem);
+  const need = T => 2*T - q1;
+  const cell = v => v <= 0 ? 'Already locked in' : v > 100 ? `${fmt(v)}% (out of reach)` : fmt(v)+'%';
+  const n = t === null ? null : need(t);
+  return `<div class="head"><span class="letter L-${L||'none'}">${L||'–'}</span>
+      <div><div class="label">Semester grade${ui.wi?' with what-ifs':''}</div><div class="answer num">${fmt(sem,2)}%</div>
+      <div class="small muted num">(${fmt(q1,2)} + ${q2===null?'—':fmt(q2,2)}) ÷ 2</div></div></div>
+    ${n===null?'':`<div class="small">To finish the semester with <b class="num">${fmt(t)}%</b> you need <b class="num">${cell(n)}</b> in ${Q2L(c)}${q2!==null&&n>0&&n<=100?` (you have ${fmt(q2,2)}% now)`:''}.</div>`}
+    <div style="overflow-x:auto"><table><thead><tr><th>Semester grade</th><th>${esc(Q2L(c))} grade you need</th></tr></thead><tbody>
+    ${[['A',89.5],['B',79.5],['C',69.5],['D',59.5]].map(([l,T]) => `<tr><td>${l} (${T}%)</td><td class="num">${cell(need(T))}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+function semHTML(c){
+  const q2 = classPct(c, ui.wi ? proj : real);
+  return `<div class="fcalc">
+      <div class="field"><label class="label" for="q1-in">${esc(Q1L(c))} (%)</label><input id="q1-in" type="number" inputmode="decimal" step="any" placeholder="e.g. 91.5" value="${esc(c.q1 ?? '')}" data-sem="q1"></div>
+      <div class="field"><label class="label" for="q2-out">${esc(Q2L(c))} (%)</label><input id="q2-out" value="${q2===null?'':fmt(q2,2)}" disabled></div>
+      <div class="field"><label class="label" for="st-in">Semester goal (%)</label><input id="st-in" type="number" inputmode="decimal" step="any" value="${esc(ui.starget)}" data-sem="t"></div>
+    </div><div id="sbody" style="display:flex;flex-direction:column;gap:12px;margin-top:14px">${semBody(c)}</div>`;
+}
+function subLine(c,a){ const catName=(c.categories.find(x=>x.id===a.cat)||{}).name||''; const w=c.mode==='weighted';
+  const parts = []; if(a.date) parts.push(esc(a.date)); if(w && catName) parts.push(esc(catName)); if((ui.wi?proj(a):real(a))===null) parts.push('not graded'); return parts.join(' · '); }
+function rowHTML(c, a){
+  const catName = (c.categories.find(x=>x.id===a.cat)||{}).name || '';
+  const v = ui.wi ? proj(a) : a.score;
+  const changed = ui.wi && !a.hypo && a.wi !== undefined && a.wi !== null && a.wi !== '' && num(a.wi) !== num(a.score);
+  const shown = ui.wi ? proj(a) : real(a); const mx = num(a.max);
+  return `<div class="arow ${a.hypo?'hypo':''} ${changed?'changed':''}" data-row="${a.id}">
+    <div><div class="aname">${esc(a.name)}${a.hypo?' <span class="chip wi">what-if</span>':''}</div><div class="small muted" id="sub-${a.id}">${subLine(c,a)}</div></div>
+    <div class="score"><input class="s" id="s-${a.id}" type="number" inputmode="decimal" aria-label="Score for ${esc(a.name)}" value="${v ?? ''}" placeholder="–" data-score="${a.id}"><span class="muted">/</span><input class="max" id="m-${a.id}" type="number" inputmode="decimal" aria-label="Points possible" value="${a.max ?? ''}" data-max="${a.id}"></div>
+    <div class="row" style="gap:2px;flex-wrap:nowrap"><span class="apct num" id="p-${a.id}">${shown!==null&&mx?fmt(shown/mx*100,0)+'%':''}</span><button class="icon" title="Delete" aria-label="Delete ${esc(a.name)}" data-act="delA" data-id="${a.id}">×</button></div>
+  </div>`;
+}
+function viewClass(c){
+  const list = c.assignments.filter(a => ui.wi || !a.hypo);
+  return `
+  <div class="row spread"><button class="btn ghost" data-act="home">← All classes</button><button class="btn" data-act="edit">Edit class</button></div>
+  <div><div class="label">${esc(c.teacher)}${c.teacher?' · ':''}${LEVEL[c.level]} · ${c.credits} credit${Number(c.credits)===1?'':'s'}</div><h1>${esc(c.name)}</h1></div>
+  <div class="row spread">
+    <div class="seg" role="group" aria-label="Grade mode"><button class="${!ui.wi?'on':''}" data-act="real">Real grades</button><button class="wi ${ui.wi?'on':''}" data-act="wi">What-if</button></div>
+    ${ui.wi && hasWI(c) ? `<button class="btn" data-act="clearWI">Reset what-ifs</button>`:''}
+  </div>
+  <div class="panel ${ui.wi?'wimode':''}" id="summary" style="${ui.wi?'border-color:var(--whatif)':''}">${summaryHTML(c)}</div>
+  <div class="panel" id="cats">${catsHTML(c)}</div>
+  <div class="panel ${ui.wi?'wimode':''}">
+    <div class="row spread" style="margin-bottom:6px"><h2>Assignments</h2><span class="small muted">${ui.wi?'Changes here are pretend and do not touch your real grades.':'Leave a score blank if it is not graded yet.'}</span></div>
+    <div class="alist">${list.length ? list.map(a => rowHTML(c,a)).join('') : '<div class="muted small" style="padding:8px 0">No assignments yet.</div>'}</div>
+    <form id="addA" class="form" style="margin-top:14px">
+      <div class="field wide"><label class="label" for="n-name">${ui.wi?'Add a pretend assignment':'Add assignment'}</label><input id="n-name" placeholder="${ui.wi?'e.g. Unit 4 Test':'Assignment name'}" required></div>
+      ${c.mode==='weighted' ? `<div class="field wide"><label class="label" for="n-cat">Category</label><select id="n-cat">${c.categories.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>` : '<span class="wide" hidden></span>'}
+      <div class="field"><label class="label" for="n-score">Score</label><input id="n-score" type="number" inputmode="decimal" step="any"></div>
+      <div class="field"><label class="label" for="n-max">Out of</label><input id="n-max" type="number" inputmode="decimal" step="any" value="100" required></div>
+      <button class="btn ${ui.wi?'':'primary'} wide" style="${ui.wi?'background:var(--whatif);color:var(--accent-ink);border-color:var(--whatif)':''}" type="submit">Add</button>
+    </form>
+  </div>
+  <div class="panel"><h2 style="margin-bottom:4px">Semester grade</h2><p class="small muted" style="margin:0 0 12px">Your district averages the two quarters: (${esc(Q1L(c))} + ${esc(Q2L(c))}) ÷ 2.</p>${semHTML(c)}</div>`;
+}
+function viewEdit(c){
+  const tw = c.categories.reduce((t,x)=>t+(Number(x.weight)||0),0);
+  return `
+  <div class="row spread"><button class="btn ghost" data-act="done">← Back to class</button><button class="btn primary" data-act="done">Done</button></div>
+  <h1>Edit class</h1>
+  <div class="panel"><div class="egrid">
+    <div class="field"><label class="label" for="e-name">Class name</label><input id="e-name" value="${esc(c.name)}" data-e="name"></div>
+    <div class="field"><label class="label" for="e-teacher">Period or teacher</label><input id="e-teacher" value="${esc(c.teacher)}" data-e="teacher"></div>
+    <div class="field"><label class="label" for="e-level">Level</label><select id="e-level" data-e="level">${Object.entries(LEVEL).map(([k,v])=>`<option value="${k}" ${c.level===k?'selected':''}>${v}</option>`).join('')}</select></div>
+    <div class="field"><label class="label" for="e-credits">Credits</label><input id="e-credits" type="number" step="0.25" min="0" value="${esc(c.credits)}" data-e="credits"></div>
+    <div class="field" style="grid-column:1/-1"><label class="label" for="e-mode">How is this class graded?</label><select id="e-mode" data-e="mode">
+      <option value="weighted" ${c.mode==='weighted'?'selected':''}>Weighted categories (e.g. Tests 50%, Homework 20%)</option>
+      <option value="points" ${c.mode==='points'?'selected':''}>Total points (every point counts the same)</option></select></div>
+  </div></div>
+  ${c.mode==='weighted' ? `<div class="panel"><div class="row spread" style="margin-bottom:10px"><h2>Categories</h2><span class="small num" style="color:${Math.abs(tw-100)>0.01?'var(--gD)':'var(--muted)'}">Total ${tw}%</span></div>
+    <div class="ecats">${c.categories.map(x=>`<div class="ecat">
+      <input aria-label="Category name" id="cn-${x.id}" value="${esc(x.name)}" data-cn="${x.id}" style="padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);min-width:0">
+      <div class="score"><input aria-label="Weight" id="cw-${x.id}" type="number" value="${esc(x.weight)}" data-cw="${x.id}" style="width:64px"><span class="muted">%</span></div>
+      <button class="icon" aria-label="Remove ${esc(x.name)}" data-act="delCat" data-id="${x.id}" ${c.categories.length<2?'disabled':''}>×</button></div>`).join('')}</div>
+    <button class="btn" data-act="addCat" style="margin-top:12px">+ Add category</button>
+    <p class="small muted">Removing a category moves its assignments into the first category. Your teacher's syllabus or StudentVUE usually lists the weights.</p></div>` : ''}
+  <div class="panel">${ui.confirm==='delClass'
+      ? `<div class="confirm">Delete ${esc(c.name)} and all its assignments? <button class="btn danger" data-act="delClass">Delete class</button><button class="btn" data-act="cancel">Keep it</button></div>`
+      : `<button class="btn danger" data-act="askDelClass">Delete this class</button>`}</div>`;
+}
+
+/* partial refresh so typing a score doesn't lose focus */
+function refresh(){
+  const c = cur(); if(!c) return;
+  const s = document.getElementById('summary'); if(s) s.innerHTML = summaryHTML(c);
+  const k = document.getElementById('cats'); if(k) k.innerHTML = catsHTML(c);
+  const sb = document.getElementById('sbody');
+  if(sb){ sb.innerHTML = semBody(c); const q2 = classPct(c, ui.wi ? proj : real); document.getElementById('q2-out').value = q2===null?'':fmt(q2,2); }
+  c.assignments.forEach(a => {
+    const row = document.querySelector(`[data-row="${a.id}"]`); if(!row) return;
+    const shown = ui.wi ? proj(a) : real(a), mx = num(a.max);
+    document.getElementById('sub-'+a.id).innerHTML = subLine(c,a);
+    document.getElementById('p-'+a.id).textContent = shown!==null&&mx ? fmt(shown/mx*100,0)+'%' : '';
+    row.classList.toggle('changed', ui.wi && !a.hypo && a.wi !== undefined && a.wi !== null && a.wi !== '' && num(a.wi) !== num(a.score));
+  });
+}
+
+/* ---------- events ---------- */
+app.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if(!b) return;
+  const act = b.dataset.act, c = cur();
+  switch(act){
+    case 'open': ui.view='class'; ui.cid=b.dataset.id; ui.wi=false; ui.edit=false; ui.confirm=null; window.scrollTo(0,0); break;
+    case 'home': ui.view='home'; ui.confirm=null; break;
+    case 'real': ui.wi=false; break;
+    case 'wi': ui.wi=true; break;
+    case 'edit': ui.edit=true; ui.confirm=null; break;
+    case 'done': ui.edit=false; ui.confirm=null; break;
+    case 'clearWI': c.assignments = c.assignments.filter(a=>!a.hypo); c.assignments.forEach(a=>delete a.wi); break;
+    case 'delA': c.assignments = c.assignments.filter(a=>a.id!==b.dataset.id); break;
+    case 'addClass': { const n = {id:uid(), name:'New class', teacher:'', level:'regular', credits:1, mode:'weighted',
+        categories:[{id:uid(),name:'Tests',weight:50},{id:uid(),name:'Quizzes',weight:30},{id:uid(),name:'Homework',weight:20}], assignments:[]};
+      S.classes.push(n); ui.view='class'; ui.cid=n.id; ui.edit=true; ui.wi=false; break; }
+    case 'addCat': c.categories.push({id:uid(), name:'New category', weight:0}); break;
+    case 'delCat': { const id=b.dataset.id; c.categories = c.categories.filter(x=>x.id!==id); c.assignments.forEach(a=>{ if(a.cat===id) a.cat=c.categories[0].id; }); break; }
+    case 'askDelClass': ui.confirm='delClass'; break;
+    case 'askClear': ui.confirm='clear'; break;
+    case 'cancel': ui.confirm=null; break;
+    case 'delClass': S.classes = S.classes.filter(x=>x.id!==c.id); ui.view='home'; ui.edit=false; ui.confirm=null; break;
+    case 'tab': ui.tab=b.dataset.id; break;
+    case 'sv': ui.view='sv'; ui.sv.err=''; ui.sv.msg=''; ui.sv.copied=false; break;
+    case 'copyBM': { const ta = document.getElementById('bm-code'); const done = () => { ui.sv.copied = true; render(); };
+      try{ navigator.clipboard.writeText(BM_HREF).then(done, () => { ta.hidden = false; ta.select(); }); }catch(err){ ta.hidden = false; ta.select(); } return; }
+    case 'clearAll': S = {sample:false, classes:[]}; ui.confirm=null; break;
+  }
+  save(); render();
+});
+
+app.addEventListener('input', e => {
+  const t = e.target, c = cur(); if(t.id === 'sv-paste'){ const v = t.value.trim(); if(v.startsWith('GRADELAB1:') && v.endsWith('}')) handlePaste(v); return; } if(!c) return;
+  if(t.dataset.score){
+    const a = c.assignments.find(x=>x.id===t.dataset.score); const v = t.value === '' ? null : Number(t.value);
+    if(ui.wi){ if(a.hypo || v !== num(a.score)) a.wi = v; else delete a.wi; if(!a.hypo && v === null && a.score !== null) a.wi = ''; }
+    else a.score = v;
+    if(ui.wi && !a.hypo && t.value === '') delete a.wi;
+    save(); refresh(); return;
+  }
+  if(t.dataset.max){ const a = c.assignments.find(x=>x.id===t.dataset.max); a.max = t.value===''?null:Number(t.value); save(); refresh(); return; }
+  if(t.dataset.sem){ if(t.dataset.sem==='q1') c.q1 = t.value===''?null:Number(t.value); else ui.starget = t.value; save(); refresh(); return; }
+  if(t.dataset.e){ c[t.dataset.e] = t.value; if(t.dataset.e==='mode' || t.dataset.e==='level'){ save(); render(); } else save(); return; }
+  if(t.dataset.cn){ c.categories.find(x=>x.id===t.dataset.cn).name = t.value; save(); return; }
+  if(t.dataset.cw){ c.categories.find(x=>x.id===t.dataset.cw).weight = t.value===''?0:Number(t.value); save();
+    const tw = c.categories.reduce((s,x)=>s+(Number(x.weight)||0),0); const lab = app.querySelector('.ecats')?.previousElementSibling?.querySelector('.small');
+    if(lab){ lab.textContent = `Total ${tw}%`; lab.style.color = Math.abs(tw-100)>0.01 ? 'var(--gD)' : 'var(--muted)'; } return; }
+});
+app.addEventListener('change', e => { if(e.target.dataset.lvl){ const k = S.classes.find(x => x.id === e.target.dataset.lvl); if(k){ k.level = e.target.value; save(); render(); } return; } if(e.target.dataset.e === 'mode' || e.target.dataset.e === 'level') { save(); render(); } });
+
+function handlePaste(text){
+  try{ const n = importPayload(text); ui.sv.err = ''; ui.sv.msg = `Synced ${n} classes from StudentVUE.`; }
+  catch(err){ ui.sv.msg = ''; ui.sv.err = err.message; }
+  render();
+}
+app.addEventListener('paste', e => { if(e.target.id !== 'sv-paste') return; e.preventDefault(); handlePaste((e.clipboardData || window.clipboardData).getData('text')); });
+app.addEventListener('submit', e => {
+  if(e.target.id !== 'addA') return; e.preventDefault();
+  const c = cur(); const name = document.getElementById('n-name').value.trim(); if(!name) return;
+  const catEl = document.getElementById('n-cat'); const sc = document.getElementById('n-score').value; const mx = document.getElementById('n-max').value;
+  const a = {id:uid(), name, cat: catEl ? catEl.value : c.categories[0].id, score:null, max: mx===''?100:Number(mx)};
+  if(ui.wi){ a.hypo = true; a.wi = sc===''?null:Number(sc); } else a.score = sc===''?null:Number(sc);
+  c.assignments.push(a); save(); render();
+  const n = document.getElementById('n-name'); if(n) n.focus();
+});
+
+/* ---------- StudentVUE sync: a bookmark reads the Grade Book you're signed in to, you paste the result here ---------- */
+const BM_SRC = "(async()=>{\nconst C='position:fixed;z-index:2147483647;top:16px;right:16px;width:320px;max-width:calc(100vw - 32px);background:#fff;color:#16202e;border:2px solid #2f5bea;border-radius:12px;padding:16px;font:15px/1.45 system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.25)';\nconst say=h=>{let d=document.getElementById('gl-ov');if(!d){d=document.createElement('div');d.id='gl-ov';d.style.cssText=C;document.body.appendChild(d);}d.innerHTML='<b>Grade Lab</b><br>'+h;return d;};\ntry{\nconst gb=document.querySelector('a[href*=\"PXP2_Gradebook.aspx\"]');\nif(!window.PXP||!PXP.GBFocusData){if(gb){say('Opening your Grade Book. Click the bookmark again when it loads.');location.href=gb.href;}else say('Open StudentVUE and sign in first.');return;}\nconst studentGU=new URLSearchParams(location.search).get('studentGU')||(gb&&new URL(gb.href).searchParams.get('studentGU'));\nconst J=(u,b)=>fetch(u,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json; charset=UTF-8'},body:JSON.stringify(b)}).then(r=>{if(!r.ok)throw new Error('StudentVUE answered '+r.status);return r.json();});\nconst T=(f,m,p)=>J('/api/GB/ClientSideData/Transfer?action='+f+'-'+m,{FriendlyName:f,Method:m,Parameters:JSON.stringify(p||{})});\nconst LC=(control,p)=>J('service/PXP2Communication.asmx/LoadControl',{request:{control,parameters:p}}).then(r=>{if(r.d&&r.d.Error)throw new Error(r.d.Error);return r.d;});\nconst school=PXP.GBFocusData.Schools[0],gps=school.GradingPeriods;\nconst cur=gps.find(g=>g.defaultFocus)||gps[0];\nconst num=s=>{const m=String(s||'').match(/(\\d)/);return m?+m[1]:0;};\nconst real=g=>!/interim|progress|mid/i.test(g.Name);\nconst n=num(cur.Name);\nconst prev=n>0&&n%2===0?gps.find(g=>real(g)&&num(g.Name)===n-1):null;\nconst base=g=>({schoolID:school.SchoolID,classID:0,gradePeriodGU:g.GU,subjectID:-1,teacherID:-1,markPeriodGU:g.MarkPeriods[0].GU,assignmentID:-1,standardIdentifier:null,viewName:null,studentGU,AGU:'0',OrgYearGU:g.OrgYearGU});\nsay('Reading your classes\u2026');\nconst list=await LC('Gradebook_SchoolClasses',base(cur));\nconst doc=new DOMParser().parseFromString(list.Data.html||'','text/html');\nconst btns=[...doc.querySelectorAll('button.course-title[data-focus]')];\nif(!btns.length)throw new Error('No classes found in the Grade Book.');\nconst pctOf=d=>{let tw=0,acc=0;(d.measureTypeGrades||[]).forEach(x=>{const w=+x.measureTypeWeight||0;if(x.pointsPossible>0&&w>0){tw+=w;acc+=w*x.points/x.pointsPossible;}});if(tw)return acc/tw*100;let p=0,pp=0;(d.measureTypeGrades||[]).forEach(x=>{p+=x.points;pp+=x.pointsPossible;});if(pp)return p/pp*100;const s=(d.students||[])[0];return s&&typeof s.percentage==='number'?s.percentage:null;};\nconst toNum=s=>{const v=parseFloat(s);return isFinite(v)&&/^\\s*-?[\\d.]+\\s*$/.test(String(s))?v:null;};\nconst out=[];\nfor(let i=0;i<btns.length;i++){\n  const b=btns[i],fa=JSON.parse(b.dataset.focus).FocusArgs;\n  let row=b;for(let k=0;k<8&&row&&!row.classList.contains('gb-class-row');k++)row=row.parentElement;\n  const t=b.textContent.trim(),m=t.match(/^(\\w+):\\s*(.*)$/);\n  say(`Reading class ${i+1} of ${btns.length}\u2026`);\n  await LC('Gradebook_RichContentClassDetails',Object.assign({},fa,{viewName:null}));\n  const d=await T('genericdata.classdata','GetClassData');\n  const names={};\n  try{const x=await T('pxp.course.content.items','LoadWithOptions',{loadOptions:{sort:[{selector:'due_date',desc:false}],requireTotalCount:true,userData:{}},clientState:{}});((x.responseData&&x.responseData.data)||[]).forEach(it=>{if(it.itemID)names[it.itemID]=it.title;});}catch(e){}\n  const used={};\n  const asg=(d.assignments||[]).filter(a=>!a.hideInPortal&&a.isForGrading!==false&&!a.excused&&!a.dropScoreText&&a.gradeBookCategoryId!==3).map(a=>{used[a.measureTypeId]=1;return{name:names[a.gradeBookId]||a.category||'Assignment',date:a.dueDate||'',type:a.category||'',score:toNum(a.score),max:+a.pointsPossible||+a.maxValue||null};});\n  const cats=(d.measureTypes||[]).filter(x=>(+x.weight>0)||used[x.id]).map(x=>({name:x.name,weight:+x.weight||0}));\n  let q1=null;\n  if(prev){try{await LC('Gradebook_RichContentClassDetails',Object.assign({},fa,{viewName:null,gradePeriodGU:prev.GU,markPeriodGU:prev.MarkPeriods[0].GU}));q1=pctOf(await T('genericdata.classdata','GetClassData'));}catch(e){}}\n  out.push({period:m?m[1]:'',name:(m?m[2]:t).trim(),teacher:(row&&row.querySelector('.teacher')||{}).textContent?.trim()||'',room:((row&&row.querySelector('.teacher-room')||{}).textContent||'').replace(/^Room:\\s*/,'').trim(),pct:asg.some(a=>a.score!==null)?pctOf(d):null,cats,asg,q1});\n}\nconst payload='GRADELAB1:'+JSON.stringify({v:1,at:Date.now(),school:school.SchoolName,cur:cur.Name.replace(/\\s*interim/i,'').trim(),prev:prev?prev.Name:null,classes:out});\nif(window.__GL_TEST)return payload;\nconst box=say(`Got ${out.length} classes. Click <b>Copy</b>, then paste into Grade Lab.<div style=\"display:flex;gap:8px;margin-top:12px\"><button id=\"gl-copy\" style=\"flex:1;padding:9px;border:0;border-radius:999px;background:#2f5bea;color:#fff;font-weight:600;cursor:pointer\">Copy</button><button id=\"gl-x\" style=\"padding:9px 14px;border:1px solid #ccd;border-radius:999px;background:#fff;cursor:pointer\">Close</button></div><textarea id=\"gl-t\" readonly style=\"width:100%;height:60px;margin-top:10px;font-size:11px;display:none\"></textarea>`);\nbox.querySelector('#gl-x').onclick=()=>box.remove();\nbox.querySelector('#gl-copy').onclick=async()=>{const ta=box.querySelector('#gl-t');try{await navigator.clipboard.writeText(payload);box.querySelector('#gl-copy').textContent='Copied! Now paste in Grade Lab';}catch(e){ta.style.display='block';ta.value=payload;ta.select();document.execCommand('copy');box.querySelector('#gl-copy').textContent='Copied (or press Ctrl+C)';}};\n}catch(e){say('Something went wrong: '+String(e.message||e).replace(/</g,'&lt;')+'<br>Tell Claude in the Grade App project.');}\n})();";
+const BM_HREF = 'javascript:void%20' + encodeURIComponent(BM_SRC.replace(/\n\s*/g, ' ').replace(/;\s*$/, ''));
+function guessLevel(t){ if(/\bAP\b|\bIB\b|advanced placement/i.test(t)) return 'ap'; if(/\bhonors?\b|\bhon\b|\(H\)|\sH$/i.test(t)) return 'honors'; return 'regular'; }
+function applyImport(cur, prev, labels){
+  const out = cur.map(co => {
+    const old = S.classes.find(c => c.svKey === co.key);
+    const weighted = co.cats.reduce((t,x) => t + x.weight, 0) > 0;
+    const cats = weighted ? co.cats.map(x => ({id:uid(), name:x.name, weight:x.weight})) : [{id:uid(), name:'All work', weight:100}];
+    const catId = name => { if(!weighted) return cats[0].id; let k = cats.find(x => x.name === name); if(!k){ k = {id:uid(), name:name || 'Other', weight:0}; cats.push(k); } return k.id; };
+    const p = prev ? (prev.find(x => x.key === co.key) || prev.find(x => x.title === co.title)) : null;
+    return {id:old?.id || uid(), svKey:co.key, name:co.title, teacher:co.staff,
+      level:old?.level || guessLevel(co.title), credits:old?.credits ?? 1, mode:weighted ? 'weighted' : 'points', categories:cats,
+      assignments:co.asg.map(a => ({id:uid(), name:a.name, date:a.date, cat:catId(a.type), score:a.score, max:a.max})),
+      period:co.period, room:co.room, staff:co.staff,
+      q1:p ? p.pct : (prev ? null : (old ? old.q1 : null)), q1Label:labels.prev || old?.q1Label || 'Quarter 1', q2Label:labels.cur || 'Quarter 2', svPct:co.pct};
+  });
+  const manual = S.sample ? [] : S.classes.filter(c => !c.svKey);
+  out.sort((a,b) => (parseFloat(a.period)||99) - (parseFloat(b.period)||99));
+  S.classes = [...out, ...manual]; S.sample = false;
+}
+
+function importPayload(text){
+  const t = String(text || '').trim();
+  if(!t.startsWith('GRADELAB1:')) throw new Error("That isn't Grade Lab data. On the StudentVUE page, click the bookmark, then Copy, then paste here.");
+  let data; try{ data = JSON.parse(t.slice(10)); }catch(e){ throw new Error('The pasted data is cut off. Click Copy on the StudentVUE page again and paste.'); }
+  const map = c => ({key:(c.period||'') + '|' + c.name, title:c.name, period:c.period||'', room:c.room||'', staff:c.teacher||'', pct:typeof c.pct === 'number' ? c.pct : null, cats:c.cats||[], asg:c.asg||[]});
+  const cur = data.classes.map(map);
+  const prev = data.prev ? data.classes.map(c => ({key:(c.period||'') + '|' + c.name, title:c.name, pct:typeof c.q1 === 'number' ? c.q1 : null})) : null;
+  applyImport(cur, prev, {cur:data.cur, prev:data.prev});
+  S.svLast = data.at || Date.now(); S.svSchool = data.school || ''; save();
+  return cur.length;
+}
+function viewSV(){
+  const sv = ui.sv;
+  return `
+  <div class="row spread"><button class="btn ghost" data-act="home">← All classes</button></div>
+  <div><div class="label">Sync grades</div><h1>StudentVUE</h1></div>
+  ${sv.err ? `<div class="banner" style="background:var(--sunk);color:var(--gF)">${esc(sv.err)}</div>` : ''}
+  ${sv.msg ? `<div class="banner">${esc(sv.msg)} <button class="btn" data-act="home">See my classes</button></div>` : ''}
+  <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+    <h2>1. Add the bookmark <span class="small muted" style="font-family:var(--body);font-weight:400">(one time)</span></h2>
+    <p style="margin:0">Show your bookmarks bar with <b>Ctrl+Shift+B</b>, then drag this button onto it:</p>
+    <div><a class="btn primary" href="${esc(BM_HREF)}" draggable="true" style="text-decoration:none;display:inline-block" onclick="return false" title="Drag me to your bookmarks bar">★ Send to Grade Lab</a></div>
+    <details><summary class="small muted" style="cursor:pointer">Dragging doesn't work?</summary>
+      <ol class="small" style="margin:8px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:4px">
+        <li>Click <b>Copy bookmark code</b> below.</li>
+        <li>Right-click your bookmarks bar and choose <b>Add page…</b></li>
+        <li>Name it <b>Send to Grade Lab</b>, paste into the URL box, and save.</li></ol>
+      <button class="btn" data-act="copyBM" style="margin-top:8px">${ui.sv.copied ? 'Copied' : 'Copy bookmark code'}</button>
+      <textarea id="bm-code" readonly hidden style="width:100%;height:70px;margin-top:8px;font-size:11px">${esc(BM_HREF)}</textarea></details>
+  </div>
+  <div class="panel" style="display:flex;flex-direction:column;gap:8px">
+    <h2>2. Get your grades</h2>
+    <ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px">
+      <li>Sign in to StudentVUE the normal way and open <b>Grade Book</b>.</li>
+      <li>Click the <b>Send to Grade Lab</b> bookmark. It reads your classes and both marking periods. This takes a few seconds.</li>
+      <li>Click <b>Copy</b> in the box that appears.</li></ol>
+    <p class="small muted" style="margin:0">The bookmark only reads the page you're already signed in to. Grade Lab never sees your password.</p>
+  </div>
+  <div class="panel" style="display:flex;flex-direction:column;gap:8px">
+    <h2>3. Paste here</h2>
+    <textarea id="sv-paste" aria-label="Paste your StudentVUE data" placeholder="Click here and press Ctrl+V" style="width:100%;min-height:90px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font:inherit;resize:vertical"></textarea>
+    <p class="small muted" style="margin:0">Syncing replaces the assignments in StudentVUE classes and clears their what-ifs. Classes you added by hand stay.${S.svLast ? ` Last synced ${esc(new Date(S.svLast).toLocaleString())}.` : ''}</p>
+  </div>`;
+}
+
+
+render();
+})();
+</script>
+</body>
+</html>
