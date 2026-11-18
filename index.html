@@ -249,7 +249,7 @@ async function pull(){
   const remote = rows && rows[0] && rows[0].data;
   if(!remote){
     cloud.ready = true; cloud.conflict = null;
-    if(hasOwnGrades()){ setOwner(me); await push(); } else { cloud.state = 'empty'; setOwner(me); }
+    if(hasOwnGrades()){ setOwner(me); await push(); } else { if(S.sample) adopt({sample:false, classes:[]}); cloud.state = 'empty'; setOwner(me); }
   } else if(!hasOwnGrades() || cloudBody(remote) === cloudBody(S)){
     adopt(remote); cloud.ready = true; cloud.conflict = null; setOwner(me); cloud.state = 'saved'; cloud.at = Date.parse(rows[0].updated_at) || Date.now();
   } else if(ownerOf() === me){
@@ -271,7 +271,7 @@ async function afterSignIn(sess){
   storeSess(sess); cloud.ready = false; cloud.conflict = null; cloud.err = '';
   acct.msg = ''; acct.err = ''; acct.busy = false;
   await pull();
-  if(!cloud.conflict && ui.view === 'acct'){ ui.view = 'home'; ui.flash = 'Signed in as ' + cloud.sess.user.email + '. Your grades now save to your account.'; }
+  if(!cloud.conflict && ui.view === 'acct'){ ui.view = 'home'; ui.flash = 'Signed in as ' + cloud.sess.user.email + '. Your grades save to your account. Remember to sync StudentVUE regularly to see your newest grades.'; }
   render();
 }
 async function acctSubmit(form){
@@ -306,7 +306,7 @@ async function signOut(){
   try{ await api('/auth/v1/logout', {method:'POST'}); }catch(e){}
   storeSess(null); setOwner(''); cloud.ready = false; cloud.conflict = null; cloud.state = ''; cloud.err = '';
   /* Your grades are safe in your account, so take them off this browser. Then nobody else using it can see them. */
-  S = sample(); lastBody = cloudBody(S); try{ localStorage.removeItem(KEY); }catch(e){}
+  S = {sample:false, classes:[]}; lastBody = cloudBody(S); try{ localStorage.removeItem(KEY); }catch(e){}
   ui.view = 'home'; ui.cid = null; ui.flash = 'Signed out. Your grades are saved in your account and were removed from this browser.';
   render();
 }
@@ -316,7 +316,7 @@ async function deleteAccount(){
   catch(e){ acct.busy = false; acct.err = 'Could not delete it: ' + e.message; render(); return; }
   clearTimeout(cloud.timer); cloud.timer = null;
   storeSess(null); setOwner(''); cloud.ready = false; cloud.conflict = null; cloud.state = ''; acct.busy = false; acct.confirmDel = false;
-  S = sample(); lastBody = cloudBody(S); try{ localStorage.removeItem(KEY); }catch(e){}
+  S = {sample:false, classes:[]}; lastBody = cloudBody(S); try{ localStorage.removeItem(KEY); }catch(e){}
   ui.view = 'home'; ui.cid = null; ui.flash = 'Your account and every grade saved in it are deleted. Grades were removed from this browser too.';
   render();
 }
@@ -363,8 +363,10 @@ function cloudLine(){
   return `☁ Saved to your account (${who})${cloud.at ? ' ' + esc(new Date(cloud.at).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})) : ''}`;
 }
 function viewAcct(){
-  const back = `<div class="row spread"><button class="btn ghost" data-act="home">← All classes</button></div>`;
-  const head = `<div><div class="label">Account</div><h1>Your grades on every device</h1></div>`;
+  const gate = cloud.on && !signedIn();
+  const back = gate ? '' : `<div class="row spread"><button class="btn ghost" data-act="home">← All classes</button></div>`;
+  const head = gate ? `<div><div class="label">Welcome to</div><h1>Grade Lab</h1><p class="muted" style="margin:6px 0 0">Your StudentVUE grades, GPA and what-ifs, on any phone or computer.</p></div>`
+    : `<div><div class="label">Account</div><h1>Your grades on every device</h1></div>`;
   if(!cloud.on) return back + head + `<div class="panel">Accounts aren't turned on for this copy of Grade Lab yet. Your grades are saved in this browser only.</div>`;
   const privacy = `<div class="panel" style="display:flex;flex-direction:column;gap:8px">
     <h2>Privacy</h2>
@@ -372,8 +374,8 @@ function viewAcct(){
       <li><b>Saved in your account:</b> your email, and your Grade Lab data: class names, periods, rooms, teachers, assignments, scores, what-ifs and grading periods. Nothing else.</li>
       <li><b>Never saved:</b> your StudentVUE username or password. Grade Lab never sees them.</li>
       <li><b>Your Grade Lab password</b> is handled by Supabase, the free database service Grade Lab uses. It's stored scrambled (hashed), so nobody can read it.</li>
-      <li><b>Who can see your grades:</b> only you, when you're signed in. The database blocks every account from reading anyone else's grades. The person who runs this Grade Lab site can open the database itself, so only use it if you trust them.</li>
-      <li><b>Deleting:</b> the button below erases your account and all your saved grades for good.</li></ul>
+      <li><b>Who can see your grades:</b> only you, when you're signed in. The database blocks every account from reading anyone else's grades.</li>
+      <li><b>Deleting:</b> once you're signed in, the <b>Delete my account and data</b> button on the Account page erases your account and all your saved grades for good.</li></ul>
   </div>`;
   if(signedIn() && acct.mode !== 'newpw'){
     const u = cloud.sess.user || {};
@@ -385,7 +387,7 @@ function viewAcct(){
     <div class="panel" style="display:flex;flex-direction:column;gap:10px">
       <p style="margin:0">Signed in as <b>${esc(u.email || '')}</b>.</p>
       <p class="small muted" style="margin:0" id="cloud-status">${cloudLine()}</p>
-      <p class="small" style="margin:0">Every change saves to your account by itself, including syncs from copy and paste, the bookmark, the extension and the iPhone shortcut. On another phone or computer, open Grade Lab and sign in with the same email to see everything.</p>
+      <p class="small" style="margin:0">Every change saves to your account by itself, including syncs from copy and paste, the bookmark, the extension and the iPhone shortcut. On another phone or computer, open Grade Lab and sign in with the same email to see everything. Grade Lab only knows your grades from your last sync, so sync with StudentVUE regularly (copy and paste, the bookmark, the extension or the iPhone shortcut) to see your newest grades.</p>
       <div class="row"><button class="btn" data-act="cloudSync">Check for newer grades</button><button class="btn" data-act="signOut">Sign out</button></div>
       <p class="small muted" style="margin:0">Signing out removes your grades from this browser. They stay in your account.</p></div>
     ${privacy}
@@ -399,8 +401,10 @@ function viewAcct(){
   const title = {in:'Sign in', up:'Create your account', forgot:'Reset your password', newpw:'Pick a new password'}[m];
   return back + head + `
   <div class="panel" style="display:flex;flex-direction:column;gap:12px">
-    <p style="margin:0">Sign in and your grades save to your account. Then open Grade Lab on any phone or computer, sign in, and they're all there. You can keep using Grade Lab without an account too; then grades stay in this browser only.</p>
+    <p style="margin:0">Sign in or create a free account. Your grades save to your account, so they're there on any phone or computer you sign in on.</p>
+    <p class="small muted" style="margin:0">After you sign in, sync your grades from StudentVUE. Grade Lab only knows your grades from your last sync, so sync with StudentVUE regularly (copy and paste, the bookmark, the extension or the iPhone shortcut) to see your newest grades.</p>
     ${m === 'in' || m === 'up' ? `<div class="seg" role="group" aria-label="Sign in or create account" style="align-self:flex-start"><button class="${m==='in'?'on':''}" data-act="acctMode" data-id="in">Sign in</button><button class="${m==='up'?'on':''}" data-act="acctMode" data-id="up">Create account</button></div>` : `<h2>${title}</h2>`}
+    ${ui.flash ? `<div class="banner"><span>✓ ${esc(ui.flash)}</span></div>` : ''}
     ${acct.msg ? `<div class="banner"><span>${esc(acct.msg)}</span></div>` : ''}
     ${acct.err ? `<div class="banner" style="background:var(--sunk);color:var(--gF)">${esc(acct.err)}</div>` : ''}
     <form id="acct-form" class="stack" style="gap:10px;max-width:380px" novalidate>
@@ -491,6 +495,7 @@ const app = document.getElementById('app');
 const cur = () => S.classes.find(c => c.id === ui.cid);
 
 function render(){
+  if(cloud.on && !signedIn() && ui.view !== 'acct') ui.view = 'acct';
   const inner = ui.view === 'acct' ? viewAcct() : ui.view === 'sv' ? viewSV() : ui.view === 'class' && cur() ? (ui.edit ? viewEdit(cur()) : viewClass(cur())) : null;
   app.innerHTML = inner === null ? viewHome() : `<div class="narrow">${inner}</div>`;
   window.scrollTo && 0;
@@ -532,7 +537,7 @@ function viewHome(){
   <div class="top"><div><div class="label">${esc(S.svSchool || 'Your classes')}</div><h1>Grade Lab</h1></div>
     <div class="row"><button class="btn primary" data-act="sv">${S.svLast ? 'Sync StudentVUE' : 'Connect StudentVUE'}</button><button class="btn" data-act="addClass">+ Add class</button>${cloud.on ? `<button class="btn" data-act="acct">${signedIn() ? '☁ Account' : 'Sign in'}</button>` : ''}</div></div>
   ${signedIn() || cloud.err ? `<div class="small muted" id="cloud-status">${cloudLine()}</div>` : ''}
-  ${ui.flash ? `<div class="banner"><span>✓ ${esc(ui.flash)}</span></div>` : S.svLast ? `<div class="small muted">Last synced from StudentVUE ${esc(new Date(S.svLast).toLocaleString())}</div>` : ''}
+  ${ui.flash ? `<div class="banner"><span>✓ ${esc(ui.flash)}</span></div>` : S.svLast ? `<div class="small muted">Last synced from StudentVUE ${esc(new Date(S.svLast).toLocaleString())}. Sync again regularly to see your newest grades.</div>` : ''}
   ${sampleBanner()}
   <div class="row spread"><div class="tabs" role="tablist">${[['grades','Grades'],['gpa','GPA'],['schedule','Schedule']].map(([k,v]) => `<button role="tab" aria-selected="${ui.tab===k}" class="${ui.tab===k?'on':''}" data-act="tab" data-id="${k}">${v}</button>`).join('')}</div>${termSelect()}</div>
   ${ui.tab === 'gpa' ? viewGPA(g, gp, anyWI) : ui.tab === 'schedule' ? viewSchedule() : `
@@ -551,7 +556,7 @@ function viewHome(){
         <span class="letter L-${L||'none'}">${L||'–'}</span>
         <span><span class="name">${c.period?`<span class="muted num">${esc(c.period)} · </span>`:''}${esc(c.name)}</span><br><span class="small muted">${esc(c.teacher)}${c.teacher?' · ':''}</span><span class="chip">${LEVEL[c.level]}</span>${hasWI(c)?' <span class="chip wi">what-if</span>':''}</span>
         <span><div class="pct num">${p===null?'N/A':fmt(p,2)+'%'}</div><div class="small muted num" style="text-align:right">${d!==null?`<span class="delta">${d>0?'+':''}${d.toFixed(1)} what-if</span>`:qs}</div></span>
-      </button>`; }).join('') : `<div class="panel muted">No classes yet. Tap <b>Add class</b> to enter your first one.</div>`}
+      </button>`; }).join('') : `<div class="panel muted">No classes yet. Tap <b>Sync StudentVUE</b> to bring in your grades, or <b>Add class</b> to type one in.</div>`}
   </div>`}
   <p class="small muted">Grades shown are for ${esc(S.term || 'the current quarter')}. Open a class to see its semester grade. Letter cutoffs: A 89.5, B 79.5, C 69.5, D 59.5. ${signedIn() ? 'Grades are saved to your account and this browser.' : cloud.on ? 'Grades are saved in this browser only. <button class="btn ghost small" data-act="acct" style="padding:0;color:var(--accent)">Sign in</button> to see them on every device.' : 'Grades are saved in this browser only.'}</p>`;
 }
@@ -948,6 +953,7 @@ function viewSV(){
   return `
   <div class="row spread"><button class="btn ghost" data-act="home">← All classes</button></div>
   <div><div class="label">Sync grades</div><h1>StudentVUE</h1></div>
+  <div class="banner"><span>Grade Lab only knows your grades from your last sync, so sync with StudentVUE regularly (copy and paste, the bookmark, the extension or the iPhone shortcut) to see your newest grades. Pick whichever of the 4 ways below works on your device.</span></div>
   ${sv.err ? `<div class="banner" style="background:var(--sunk);color:var(--gF)">${esc(sv.err)}</div>` : ''}
   ${sv.msg ? `<div class="banner"><span>✓ ${esc(sv.msg)}</span> <button class="btn" data-act="home">See my classes</button></div>` : ''}
   <div class="panel" style="display:flex;flex-direction:column;gap:10px">
