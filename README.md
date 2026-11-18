@@ -1,2 +1,2 @@
 # Grade-Lab.github.io
-Basically just a better StudentVUE
+Welcome to Grade Labs! If you are a student that uses StudentVUE to check your grades, Grade Labs is somewhat of an upgrade. Currently, grade labs is just a "What if" site. This means that it is not actually linked to StudentVUE, but it is super easy to get your classes and grades into the site (instructions are on the page). I hope Grade Labs can help you with your everyday needs surrounding your grades. The current version online is my first one, so expect there to be some small mistakes. If you find any, let me know! Also, I am currently working on linking it to StudentVUE which has proved much more difficult than I could've expected. So, bear with me and I hope to get the site to perfection soon!
