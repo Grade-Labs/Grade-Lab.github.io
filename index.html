@@ -149,10 +149,271 @@ function sample(){
   return {sample:true, classes:[calc,eng,chem,hist,span]};
 }
 function load(){ try{ const t = localStorage.getItem(KEY); return t ? JSON.parse(t) : null; }catch(e){ return null; } }
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} cloudOnSave(); }
 
 let S = load() || sample();
 const ui = {view:'home', tab:'grades', cid:null, wi:false, edit:false, confirm:null, starget:89.5, sv:{msg:'', err:'', copied:false}};
+
+/* ---------- Accounts: save grades to your account so they show up on any device ----------
+   Uses a free Supabase project. Put its Project URL and its publishable (or "anon public") key below.
+   Both are meant to be public, so it's safe to have them in this file.
+   NEVER put the "secret" or "service_role" key here. */
+const CLOUD_URL = 'https://ibqiwhgvwuizxpwefwqq.supabase.co';
+const CLOUD_KEY = 'sb_publishable_Hoxr1aZF1AUQ2oijv-XMxQ_mhVdjA4D';
+
+const AUTH_KEY = 'gradelab.auth', OWNER_KEY = 'gradelab.owner';
+const cloud = {on: !!(CLOUD_URL && CLOUD_KEY), sess:null, ready:false, state:'', err:'', at:0, conflict:null, timer:null, refreshing:null};
+const acct = {mode:'in', email:'', msg:'', err:'', busy:false, confirmDel:false};
+try{ cloud.sess = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null'); }catch(e){}
+const signedIn = () => !!(cloud.on && cloud.sess && cloud.sess.access_token);
+const ownerOf = () => { try{ return localStorage.getItem(OWNER_KEY) || ''; }catch(e){ return ''; } };
+const setOwner = id => { try{ id ? localStorage.setItem(OWNER_KEY, id) : localStorage.removeItem(OWNER_KEY); }catch(e){} };
+/* What goes to the account: the grade data only. Things that belong to one browser (like "the extension is installed here") stay local. */
+function cloudBody(st){ const o = Object.assign({}, st); delete o.extSeen; delete o.savedAt; return JSON.stringify(o); }
+let lastBody = cloudBody(S);
+function storeSess(s){
+  if(s && !s.expires_at && s.expires_in) s.expires_at = Math.floor(Date.now()/1000) + s.expires_in;
+  cloud.sess = s ? {access_token:s.access_token, refresh_token:s.refresh_token, expires_at:s.expires_at, user:{id:s.user && s.user.id, email:s.user && s.user.email}} : null;
+  try{ cloud.sess ? localStorage.setItem(AUTH_KEY, JSON.stringify(cloud.sess)) : localStorage.removeItem(AUTH_KEY); }catch(e){}
+}
+function friendly(m){
+  m = String(m || '');
+  if(/invalid login credentials/i.test(m)) return "That email and password don't match an account. Check them, or create an account.";
+  if(/already (been )?registered|already exists/i.test(m)) return 'There is already an account with that email. Sign in instead.';
+  if(/email not confirmed/i.test(m)) return 'Open the confirmation email we sent you first, then sign in.';
+  if(/rate limit|too many/i.test(m)) return 'Too many tries in a short time. Wait a few minutes and try again.';
+  if(/password should be at least|weak password/i.test(m)) return 'Pick a longer password (at least 6 characters, more is better).';
+  if(/unable to validate email|invalid email|email address .* invalid/i.test(m)) return "That email address doesn't look right.";
+  return m;
+}
+async function api(path, opts, auth){
+  opts = opts || {};
+  const h = Object.assign({apikey:CLOUD_KEY, 'Content-Type':'application/json'}, opts.headers || {});
+  if(auth !== false){ const t = await accessToken(); h.Authorization = 'Bearer ' + t; }
+  let r;
+  try{ r = await fetch(CLOUD_URL.replace(/\/+$/, '') + path, Object.assign({}, opts, {headers:h})); }
+  catch(e){ const err = new Error("Couldn't reach the account server. Check your internet connection. On a school network it may be blocked."); err.net = true; throw err; }
+  const txt = await r.text(); let j = null; try{ j = txt ? JSON.parse(txt) : null; }catch(e){}
+  if(!r.ok){ const err = new Error(friendly(j && (j.msg || j.message || j.error_description || j.error) || ('Error ' + r.status))); err.status = r.status; throw err; }
+  return j;
+}
+async function accessToken(){
+  const s = cloud.sess; if(!s) throw new Error('Not signed in.');
+  if(s.expires_at && s.expires_at * 1000 - Date.now() > 60000) return s.access_token;
+  if(!cloud.refreshing) cloud.refreshing = (async () => {
+    try{ storeSess(await api('/auth/v1/token?grant_type=refresh_token', {method:'POST', body:JSON.stringify({refresh_token:s.refresh_token})}, false)); }
+    catch(e){ if(!e.net){ storeSess(null); cloud.ready = false; cloud.err = 'You were signed out. Sign in again to keep saving to your account.'; } throw e; }
+    finally{ cloud.refreshing = null; }
+  })();
+  await cloud.refreshing; return cloud.sess.access_token;
+}
+/* Called by save(): remember when the grades last really changed, and send them to the account a moment later. */
+function cloudOnSave(){
+  const b = cloudBody(S); if(b === lastBody) return; lastBody = b; S.savedAt = Date.now();
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  schedulePush();
+}
+function schedulePush(){
+  if(!signedIn() || !cloud.ready || cloud.conflict || S.sample) return;
+  cloud.state = 'pending'; clearTimeout(cloud.timer); cloud.timer = setTimeout(() => push(), 1500); cloudStatus();
+}
+async function push(keepalive){
+  clearTimeout(cloud.timer); cloud.timer = null;
+  if(!signedIn() || !cloud.ready || cloud.conflict || S.sample) return;
+  cloud.state = 'saving'; cloudStatus();
+  try{
+    const data = JSON.parse(JSON.stringify(S)); delete data.extSeen;
+    await api('/rest/v1/grade_data', {method:'POST', keepalive:!!keepalive, headers:{Prefer:'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify({user_id:cloud.sess.user.id, data, updated_at:new Date().toISOString()})});
+    cloud.state = 'saved'; cloud.err = ''; cloud.at = Date.now(); setOwner(cloud.sess.user.id);
+  }catch(e){ cloud.state = 'error'; cloud.err = e.message; }
+  cloudStatus();
+}
+function adopt(data){
+  const ext = S.extSeen; S = data; if(ext) S.extSeen = true;
+  lastBody = cloudBody(S);
+  try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  if(ui.view === 'class' && !cur()){ ui.view = 'home'; ui.edit = false; }
+}
+const hasOwnGrades = () => !S.sample && (S.classes || []).length > 0;
+/* Get the account's grades. Whichever copy changed most recently wins.
+   The first time you sign in on a browser that already has other grades, Grade Lab asks which to keep. */
+async function pull(){
+  if(!signedIn()) return;
+  if(cloud.timer) await push();
+  const me = cloud.sess.user.id;
+  let rows;
+  try{ rows = await api('/rest/v1/grade_data?select=data,updated_at&user_id=eq.' + encodeURIComponent(me)); }
+  catch(e){ cloud.state = 'error'; cloud.err = e.message; cloudStatus(); return; }
+  cloud.err = '';
+  const remote = rows && rows[0] && rows[0].data;
+  if(!remote){
+    cloud.ready = true; cloud.conflict = null;
+    if(hasOwnGrades()){ setOwner(me); await push(); } else { cloud.state = 'empty'; setOwner(me); }
+  } else if(!hasOwnGrades() || cloudBody(remote) === cloudBody(S)){
+    adopt(remote); cloud.ready = true; cloud.conflict = null; setOwner(me); cloud.state = 'saved'; cloud.at = Date.parse(rows[0].updated_at) || Date.now();
+  } else if(ownerOf() === me){
+    cloud.ready = true; cloud.conflict = null;
+    if((remote.savedAt || 0) > (S.savedAt || 0)){ adopt(remote); cloud.state = 'saved'; cloud.at = Date.parse(rows[0].updated_at) || Date.now(); }
+    else if((S.savedAt || 0) > (remote.savedAt || 0)) await push();
+    else cloud.state = 'saved';
+  } else {
+    cloud.conflict = {data:remote, at:Date.parse(rows[0].updated_at) || 0}; cloud.ready = true; cloud.state = 'conflict';
+  }
+  render();
+}
+function resolveConflict(useAccount){
+  const c = cloud.conflict; if(!c) return; cloud.conflict = null; setOwner(cloud.sess.user.id);
+  if(useAccount){ adopt(c.data); cloud.state = 'saved'; cloud.at = c.at; ui.flash = 'Loaded the grades saved in your account.'; }
+  else { S.savedAt = Date.now(); push(); ui.flash = "Saved this browser's grades to your account."; }
+}
+async function afterSignIn(sess){
+  storeSess(sess); cloud.ready = false; cloud.conflict = null; cloud.err = '';
+  acct.msg = ''; acct.err = ''; acct.busy = false;
+  await pull();
+  if(!cloud.conflict && ui.view === 'acct'){ ui.view = 'home'; ui.flash = 'Signed in as ' + cloud.sess.user.email + '. Your grades now save to your account.'; }
+  render();
+}
+async function acctSubmit(form){
+  const email = (form.querySelector('#acct-email') || {}).value || acct.email, pw = (form.querySelector('#acct-pw') || {}).value || '';
+  acct.email = email.trim(); acct.err = ''; acct.msg = '';
+  if(acct.mode !== 'newpw' && !acct.email){ acct.err = 'Type your email first.'; render(); return; }
+  if(acct.mode !== 'forgot' && pw.length < 6){ acct.err = 'Pick a password with at least 6 characters.'; render(); return; }
+  acct.busy = true; render();
+  try{
+    if(acct.mode === 'in'){
+      await afterSignIn(await api('/auth/v1/token?grant_type=password', {method:'POST', body:JSON.stringify({email:acct.email, password:pw})}, false)); return;
+    }
+    if(acct.mode === 'up'){
+      const r = await api('/auth/v1/signup?redirect_to=' + encodeURIComponent(GL_URL), {method:'POST', body:JSON.stringify({email:acct.email, password:pw})}, false);
+      if(r && r.access_token){ await afterSignIn(r); return; }
+      if(r && r.identities && r.identities.length === 0) throw new Error('There is already an account with that email. Sign in instead.');
+      acct.mode = 'in'; acct.msg = 'Almost done. Open the email we just sent you and tap the link, then sign in here.';
+    }
+    if(acct.mode === 'forgot'){
+      await api('/auth/v1/recover?redirect_to=' + encodeURIComponent(GL_URL), {method:'POST', body:JSON.stringify({email:acct.email})}, false);
+      acct.mode = 'in'; acct.msg = 'If that email has an account, a reset link is on its way. Open it on this device.';
+    }
+    if(acct.mode === 'newpw'){
+      await api('/auth/v1/user', {method:'PUT', body:JSON.stringify({password:pw})});
+      acct.mode = 'in'; ui.view = 'home'; ui.flash = 'Your new password is saved.';
+    }
+  }catch(e){ acct.err = e.message; }
+  acct.busy = false; render();
+}
+async function signOut(){
+  if(cloud.timer) await push();
+  try{ await api('/auth/v1/logout', {method:'POST'}); }catch(e){}
+  storeSess(null); setOwner(''); cloud.ready = false; cloud.conflict = null; cloud.state = ''; cloud.err = '';
+  /* Your grades are safe in your account, so take them off this browser. Then nobody else using it can see them. */
+  S = sample(); lastBody = cloudBody(S); try{ localStorage.removeItem(KEY); }catch(e){}
+  ui.view = 'home'; ui.cid = null; ui.flash = 'Signed out. Your grades are saved in your account and were removed from this browser.';
+  render();
+}
+async function deleteAccount(){
+  acct.busy = true; acct.err = ''; render();
+  try{ await api('/rest/v1/rpc/delete_my_account', {method:'POST', body:'{}'}); }
+  catch(e){ acct.busy = false; acct.err = 'Could not delete it: ' + e.message; render(); return; }
+  clearTimeout(cloud.timer); cloud.timer = null;
+  storeSess(null); setOwner(''); cloud.ready = false; cloud.conflict = null; cloud.state = ''; acct.busy = false; acct.confirmDel = false;
+  S = sample(); lastBody = cloudBody(S); try{ localStorage.removeItem(KEY); }catch(e){}
+  ui.view = 'home'; ui.cid = null; ui.flash = 'Your account and every grade saved in it are deleted. Grades were removed from this browser too.';
+  render();
+}
+/* After a password-reset or confirmation email, Supabase sends you back here with a sign-in in the address. */
+function authFromHash(){
+  const h = location.hash.slice(1); if(!/(^|&)(access_token|error_description)=/.test(h)) return false;
+  const p = new URLSearchParams(h);
+  try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){}
+  ui.view = 'acct';
+  if(p.get('error_description')){ acct.err = p.get('error_description').replace(/\+/g, ' ') + '. Ask for a new email and try again.'; return true; }
+  storeSess({access_token:p.get('access_token'), refresh_token:p.get('refresh_token'), expires_in:+p.get('expires_in') || 3600,
+    expires_at:+p.get('expires_at') || 0, user:null});
+  if(p.get('type') === 'recovery') acct.mode = 'newpw';
+  return true;
+}
+async function cloudStart(){
+  if(!cloud.on) return;
+  const viaLink = authFromHash();
+  if(!signedIn()){ if(viaLink) render(); return; }
+  if(!cloud.sess.user || !cloud.sess.user.id){
+    try{ const u = await api('/auth/v1/user'); cloud.sess.user = {id:u.id, email:u.email}; storeSess(cloud.sess); }
+    catch(e){ acct.err = e.message; render(); return; }
+    if(acct.mode !== 'newpw'){ ui.view = 'home'; ui.flash = 'Signed in as ' + cloud.sess.user.email + '.'; }
+  }
+  await pull();
+  render();
+}
+/* Coming back to this tab (maybe after using another device): get the newest grades. Leaving it: send anything not saved yet. */
+document.addEventListener('visibilitychange', () => {
+  if(!signedIn() || !cloud.ready) return;
+  if(document.visibilityState === 'hidden'){ if(cloud.timer) push(true); }
+  else if(!ui.edit && document.activeElement?.tagName !== 'INPUT') pull();
+});
+function cloudStatus(){
+  const el = document.getElementById('cloud-status'); if(el) el.innerHTML = cloudLine();
+}
+function cloudLine(){
+  if(!signedIn()) return cloud.err ? `<span style="color:var(--gD)">${esc(cloud.err)}</span>` : '';
+  const who = esc(cloud.sess.user && cloud.sess.user.email || '');
+  if(cloud.conflict) return `<span style="color:var(--gD)">Choose which grades to keep. <button class="btn" data-act="acct" style="padding:2px 10px">Choose</button></span>`;
+  if(cloud.state === 'pending' || cloud.state === 'saving') return `☁ Saving to ${who}…`;
+  if(cloud.state === 'error') return `<span style="color:var(--gD)">☁ Not saved to your account yet: ${esc(cloud.err)}</span> <button class="btn" data-act="cloudSync" style="padding:2px 10px">Try again</button>`;
+  if(cloud.state === 'empty') return `☁ Signed in as ${who}. Sync StudentVUE or add a class and it saves to your account.`;
+  return `☁ Saved to your account (${who})${cloud.at ? ' ' + esc(new Date(cloud.at).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})) : ''}`;
+}
+function viewAcct(){
+  const back = `<div class="row spread"><button class="btn ghost" data-act="home">← All classes</button></div>`;
+  const head = `<div><div class="label">Account</div><h1>Your grades on every device</h1></div>`;
+  if(!cloud.on) return back + head + `<div class="panel">Accounts aren't turned on for this copy of Grade Lab yet. Your grades are saved in this browser only.</div>`;
+  const privacy = `<div class="panel" style="display:flex;flex-direction:column;gap:8px">
+    <h2>Privacy</h2>
+    <ul class="small" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px">
+      <li><b>Saved in your account:</b> your email, and your Grade Lab data: class names, periods, rooms, teachers, assignments, scores, what-ifs and grading periods. Nothing else.</li>
+      <li><b>Never saved:</b> your StudentVUE username or password. Grade Lab never sees them.</li>
+      <li><b>Your Grade Lab password</b> is handled by Supabase, the free database service Grade Lab uses. It's stored scrambled (hashed), so nobody can read it.</li>
+      <li><b>Who can see your grades:</b> only you, when you're signed in. The database blocks every account from reading anyone else's grades. The person who runs this Grade Lab site can open the database itself, so only use it if you trust them.</li>
+      <li><b>Deleting:</b> the button below erases your account and all your saved grades for good.</li></ul>
+  </div>`;
+  if(signedIn() && acct.mode !== 'newpw'){
+    const u = cloud.sess.user || {};
+    return back + head + (ui.flash ? `<div class="banner"><span>✓ ${esc(ui.flash)}</span></div>` : '') + (cloud.conflict ? `<div class="panel" style="display:flex;flex-direction:column;gap:10px;border-color:var(--gD)">
+      <h2>Which grades should Grade Lab keep?</h2>
+      <p style="margin:0">This browser has grades that aren't in your account, and your account already has grades saved${cloud.conflict.at ? ' (last saved ' + esc(new Date(cloud.conflict.at).toLocaleString()) + ')' : ''}. Pick one. The other copy is replaced.</p>
+      <div class="row"><button class="btn primary" data-act="useAccount">Use my account's grades</button><button class="btn" data-act="useBrowser">Use this browser's grades</button></div>
+      <p class="small muted" style="margin:0">Not sure? Pick your account's grades, then sync StudentVUE again. That gets you the newest grades either way.</p></div>` : '') + `
+    <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+      <p style="margin:0">Signed in as <b>${esc(u.email || '')}</b>.</p>
+      <p class="small muted" style="margin:0" id="cloud-status">${cloudLine()}</p>
+      <p class="small" style="margin:0">Every change saves to your account by itself, including syncs from copy and paste, the bookmark, the extension and the iPhone shortcut. On another phone or computer, open Grade Lab and sign in with the same email to see everything.</p>
+      <div class="row"><button class="btn" data-act="cloudSync">Check for newer grades</button><button class="btn" data-act="signOut">Sign out</button></div>
+      <p class="small muted" style="margin:0">Signing out removes your grades from this browser. They stay in your account.</p></div>
+    ${privacy}
+    <div class="panel" style="display:flex;flex-direction:column;gap:8px">
+      <h2>Delete my account and data</h2>
+      ${acct.err ? `<p class="small" style="margin:0;color:var(--gF)">${esc(acct.err)}</p>` : ''}
+      ${acct.confirmDel ? `<div class="confirm">Delete your account and every grade saved in it? This can't be undone. <button class="btn danger" data-act="delAccount" ${acct.busy ? 'disabled' : ''}>${acct.busy ? 'Deleting…' : 'Yes, delete everything'}</button><button class="btn" data-act="cancelDel">Keep it</button></div>`
+        : `<div><button class="btn danger" data-act="askDelAccount">Delete my account and data</button></div>`}</div>`;
+  }
+  const m = acct.mode;
+  const title = {in:'Sign in', up:'Create your account', forgot:'Reset your password', newpw:'Pick a new password'}[m];
+  return back + head + `
+  <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+    <p style="margin:0">Sign in and your grades save to your account. Then open Grade Lab on any phone or computer, sign in, and they're all there. You can keep using Grade Lab without an account too; then grades stay in this browser only.</p>
+    ${m === 'in' || m === 'up' ? `<div class="seg" role="group" aria-label="Sign in or create account" style="align-self:flex-start"><button class="${m==='in'?'on':''}" data-act="acctMode" data-id="in">Sign in</button><button class="${m==='up'?'on':''}" data-act="acctMode" data-id="up">Create account</button></div>` : `<h2>${title}</h2>`}
+    ${acct.msg ? `<div class="banner"><span>${esc(acct.msg)}</span></div>` : ''}
+    ${acct.err ? `<div class="banner" style="background:var(--sunk);color:var(--gF)">${esc(acct.err)}</div>` : ''}
+    <form id="acct-form" class="stack" style="gap:10px;max-width:380px" novalidate>
+      ${m !== 'newpw' ? `<label class="field"><span class="label">Email</span><input id="acct-email" type="email" autocomplete="email" inputmode="email" required value="${esc(acct.email)}"></label>` : ''}
+      ${m !== 'forgot' ? `<label class="field"><span class="label">${m === 'in' ? 'Password' : 'New Grade Lab password'}</span><input id="acct-pw" type="password" minlength="6" required autocomplete="${m === 'in' ? 'current-password' : 'new-password'}"></label>` : ''}
+      ${m === 'up' || m === 'newpw' ? `<p class="small muted" style="margin:0">Make up a new password just for Grade Lab. <b>Don't use your StudentVUE or school password.</b></p>` : ''}
+      <div class="row"><button class="btn primary" type="submit" ${acct.busy ? 'disabled' : ''}>${acct.busy ? 'One moment…' : {in:'Sign in', up:'Create account', forgot:'Email me a reset link', newpw:'Save new password'}[m]}</button>
+        ${m === 'in' ? `<button class="btn ghost" type="button" data-act="acctMode" data-id="forgot">Forgot password?</button>` : ''}
+        ${m === 'forgot' ? `<button class="btn ghost" type="button" data-act="acctMode" data-id="in">Back to sign in</button>` : ''}</div>
+    </form>
+  </div>${privacy}`;
+}
+
 
 /* ---------- grade math ---------- */
 const real = a => a.hypo ? null : num(a.score);
@@ -230,7 +491,7 @@ const app = document.getElementById('app');
 const cur = () => S.classes.find(c => c.id === ui.cid);
 
 function render(){
-  const inner = ui.view === 'sv' ? viewSV() : ui.view === 'class' && cur() ? (ui.edit ? viewEdit(cur()) : viewClass(cur())) : null;
+  const inner = ui.view === 'acct' ? viewAcct() : ui.view === 'sv' ? viewSV() : ui.view === 'class' && cur() ? (ui.edit ? viewEdit(cur()) : viewClass(cur())) : null;
   app.innerHTML = inner === null ? viewHome() : `<div class="narrow">${inner}</div>`;
   window.scrollTo && 0;
 }
@@ -269,7 +530,8 @@ function viewHome(){
   const showP = (a,b) => anyWI && gp && g && Math.abs(a-b) > 0.0005;
   return `
   <div class="top"><div><div class="label">${esc(S.svSchool || 'Your classes')}</div><h1>Grade Lab</h1></div>
-    <div class="row"><button class="btn primary" data-act="sv">${S.svLast ? 'Sync StudentVUE' : 'Connect StudentVUE'}</button><button class="btn" data-act="addClass">+ Add class</button></div></div>
+    <div class="row"><button class="btn primary" data-act="sv">${S.svLast ? 'Sync StudentVUE' : 'Connect StudentVUE'}</button><button class="btn" data-act="addClass">+ Add class</button>${cloud.on ? `<button class="btn" data-act="acct">${signedIn() ? '☁ Account' : 'Sign in'}</button>` : ''}</div></div>
+  ${signedIn() || cloud.err ? `<div class="small muted" id="cloud-status">${cloudLine()}</div>` : ''}
   ${ui.flash ? `<div class="banner"><span>✓ ${esc(ui.flash)}</span></div>` : S.svLast ? `<div class="small muted">Last synced from StudentVUE ${esc(new Date(S.svLast).toLocaleString())}</div>` : ''}
   ${sampleBanner()}
   <div class="row spread"><div class="tabs" role="tablist">${[['grades','Grades'],['gpa','GPA'],['schedule','Schedule']].map(([k,v]) => `<button role="tab" aria-selected="${ui.tab===k}" class="${ui.tab===k?'on':''}" data-act="tab" data-id="${k}">${v}</button>`).join('')}</div>${termSelect()}</div>
@@ -291,7 +553,7 @@ function viewHome(){
         <span><div class="pct num">${p===null?'N/A':fmt(p,2)+'%'}</div><div class="small muted num" style="text-align:right">${d!==null?`<span class="delta">${d>0?'+':''}${d.toFixed(1)} what-if</span>`:qs}</div></span>
       </button>`; }).join('') : `<div class="panel muted">No classes yet. Tap <b>Add class</b> to enter your first one.</div>`}
   </div>`}
-  <p class="small muted">Grades shown are for ${esc(S.term || 'the current quarter')}. Open a class to see its semester grade. Letter cutoffs: A 89.5, B 79.5, C 69.5, D 59.5. Grades are saved in this browser only.</p>`;
+  <p class="small muted">Grades shown are for ${esc(S.term || 'the current quarter')}. Open a class to see its semester grade. Letter cutoffs: A 89.5, B 79.5, C 69.5, D 59.5. ${signedIn() ? 'Grades are saved to your account and this browser.' : cloud.on ? 'Grades are saved in this browser only. <button class="btn ghost small" data-act="acct" style="padding:0;color:var(--accent)">Sign in</button> to see them on every device.' : 'Grades are saved in this browser only.'}</p>`;
 }
 function termSelect(){
   if(!S.terms || !S.terms.length) return '';
@@ -457,12 +719,21 @@ app.addEventListener('click', e => {
     case 'copySC': { const ta = document.getElementById('sc-code'); const done = () => { ui.sv.sccopied = true; render(); };
       try{ navigator.clipboard.writeText(SC_CODE).then(done, () => { ta.hidden = false; ta.select(); }); }catch(err){ ta.hidden = false; ta.select(); } return; }
     case 'clearAll': S = {sample:false, classes:[]}; ui.confirm=null; break;
+    case 'acct': ui.view='acct'; acct.err=''; acct.msg=''; acct.confirmDel=false; if(acct.mode==='newpw' && !signedIn()) acct.mode='in'; window.scrollTo(0,0); break;
+    case 'acctMode': acct.mode=b.dataset.id; acct.err=''; acct.msg=''; { const em = document.getElementById('acct-email'); if(em) acct.email = em.value; } break;
+    case 'signOut': signOut(); return;
+    case 'cloudSync': cloud.err=''; pull(); return;
+    case 'useAccount': resolveConflict(true); ui.view='home'; render(); return;
+    case 'useBrowser': resolveConflict(false); ui.view='home'; render(); return;
+    case 'askDelAccount': acct.confirmDel=true; acct.err=''; break;
+    case 'cancelDel': acct.confirmDel=false; break;
+    case 'delAccount': deleteAccount(); return;
   }
   save(); render();
 });
 
 app.addEventListener('input', e => {
-  const t = e.target, c = cur(); if(t.id === 'sv-paste'){ const v = t.value.trim(); if(v.startsWith('GRADELAB1:') && v.endsWith('}')) handlePaste(v); return; } if(!c) return;
+  const t = e.target, c = cur(); if(t.id === 'acct-email'){ acct.email = t.value; return; } if(t.id === 'acct-pw') return; if(t.id === 'sv-paste'){ const v = t.value.trim(); if(v.startsWith('GRADELAB1:') && v.endsWith('}')) handlePaste(v); return; } if(!c) return;
   if(t.dataset.score){
     const a = c.assignments.find(x=>x.id===t.dataset.score); const v = t.value === '' ? null : Number(t.value);
     if(ui.wi){ if(a.hypo || v !== num(a.score)) a.wi = v; else delete a.wi; if(!a.hypo && v === null && a.score !== null) a.wi = ''; }
@@ -491,6 +762,7 @@ function handlePaste(text){
 }
 app.addEventListener('paste', e => { if(e.target.id !== 'sv-paste') return; e.preventDefault(); handlePaste((e.clipboardData || window.clipboardData).getData('text')); });
 app.addEventListener('submit', e => {
+  if(e.target.id === 'acct-form'){ e.preventDefault(); acctSubmit(e.target); return; }
   if(e.target.id !== 'addA') return; e.preventDefault();
   const c = cur(); const name = document.getElementById('n-name').value.trim(); if(!name) return;
   const catEl = document.getElementById('n-cat'); const sc = document.getElementById('n-score').value; const mx = document.getElementById('n-max').value;
@@ -734,7 +1006,7 @@ function viewSV(){
 }
 
 
-hashImport().finally(render);
+hashImport().finally(() => { render(); cloudStart(); });
 window.postMessage({type:'GRADELAB_READY'}, location.origin);
 window.addEventListener('hashchange', () => { hashImport().then(r => { if(r) render(); }); });
 render();
