@@ -387,7 +387,7 @@ function viewAcct(){
     <div class="panel" style="display:flex;flex-direction:column;gap:10px">
       <p style="margin:0">Signed in as <b>${esc(u.email || '')}</b>.</p>
       <p class="small muted" style="margin:0" id="cloud-status">${cloudLine()}</p>
-      <p class="small" style="margin:0">Every change saves to your account by itself, including syncs from copy and paste, the bookmark, the extension and the iPhone shortcut. On another phone or computer, open Grade Lab and sign in with the same email to see everything. Grade Lab only knows your grades from your last sync, so sync with StudentVUE regularly (copy and paste, the bookmark, the extension or the iPhone shortcut) to see your newest grades.</p>
+      <p class="small" style="margin:0">Every change saves to your account by itself, including syncs from copy and paste, the bookmark and the iPhone shortcut. On another phone or computer, open Grade Lab and sign in with the same email to see everything. Grade Lab only knows your grades from your last sync, so sync with StudentVUE regularly (copy and paste, the bookmark or the iPhone shortcut) to see your newest grades.</p>
       <div class="row"><button class="btn" data-act="cloudSync">Check for newer grades</button><button class="btn" data-act="signOut">Sign out</button></div>
       <p class="small muted" style="margin:0">Signing out removes your grades from this browser. They stay in your account.</p></div>
     ${privacy}
@@ -402,7 +402,7 @@ function viewAcct(){
   return back + head + `
   <div class="panel" style="display:flex;flex-direction:column;gap:12px">
     <p style="margin:0">Sign in or create a free account. Your grades save to your account, so they're there on any phone or computer you sign in on.</p>
-    <p class="small muted" style="margin:0">After you sign in, sync your grades from StudentVUE. Grade Lab only knows your grades from your last sync, so sync with StudentVUE regularly (copy and paste, the bookmark, the extension or the iPhone shortcut) to see your newest grades.</p>
+    <p class="small muted" style="margin:0">After you sign in, sync your grades from StudentVUE. Grade Lab only knows your grades from your last sync, so sync with StudentVUE regularly (copy and paste, the bookmark or the iPhone shortcut) to see your newest grades.</p>
     ${m === 'in' || m === 'up' ? `<div class="seg" role="group" aria-label="Sign in or create account" style="align-self:flex-start"><button class="${m==='in'?'on':''}" data-act="acctMode" data-id="in">Sign in</button><button class="${m==='up'?'on':''}" data-act="acctMode" data-id="up">Create account</button></div>` : `<h2>${title}</h2>`}
     ${ui.flash ? `<div class="banner"><span>✓ ${esc(ui.flash)}</span></div>` : ''}
     ${acct.msg ? `<div class="banner"><span>${esc(acct.msg)}</span></div>` : ''}
@@ -953,7 +953,7 @@ function viewSV(){
   return `
   <div class="row spread"><button class="btn ghost" data-act="home">← All classes</button></div>
   <div><div class="label">Sync grades</div><h1>StudentVUE</h1></div>
-  <div class="banner"><span>Grade Lab only knows your grades from your last sync, so sync with StudentVUE regularly (copy and paste, the bookmark, the extension or the iPhone shortcut) to see your newest grades. Pick whichever of the 4 ways below works on your device.</span></div>
+  <div class="banner"><span>Grade Lab only knows your grades from your last sync, so sync with StudentVUE regularly (copy and paste, the bookmark or the iPhone shortcut) to see your newest grades. Pick whichever of the 3 ways below works on your device.</span></div>
   ${sv.err ? `<div class="banner" style="background:var(--sunk);color:var(--gF)">${esc(sv.err)}</div>` : ''}
   ${sv.msg ? `<div class="banner"><span>✓ ${esc(sv.msg)}</span> <button class="btn" data-act="home">See my classes</button></div>` : ''}
   <div class="panel" style="display:flex;flex-direction:column;gap:10px">
@@ -967,11 +967,6 @@ function viewSV(){
     <label class="row" style="gap:8px"><span class="label">Grading period in StudentVUE</span><select id="sv-period" class="termsel">${periodOptions().map(p => `<option ${p === guessPeriod() ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
     <textarea id="sv-paste" aria-label="Paste your StudentVUE page" placeholder="Click here and press Ctrl+V" style="width:100%;min-height:90px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font:inherit;resize:vertical"></textarea>
     <p class="small muted" style="margin:0">Pasting a class replaces that class's grades for that period and clears its what-ifs. Other classes and periods stay as they are. Grade Lab only reads the text you paste; it never sees your password.${S.svLast ? ` Last synced ${esc(new Date(S.svLast).toLocaleString())}.` : ''}</p>
-  </div>
-  <div class="panel" style="display:flex;flex-direction:column;gap:8px">
-    <h2>Automatic: Grade Lab Sync extension <span class="small muted" style="font-family:var(--body);font-weight:400">(Chrome on a home computer)</span></h2>
-    ${S.extSeen ? `<p style="margin:0">✓ The extension is installed in this browser. Open your StudentVUE Grade Book and Grade Lab updates by itself, even if this tab is already open.</p>`
-      : `<p style="margin:0">With the Grade Lab Sync extension, just opening your StudentVUE Grade Book keeps Grade Lab up to date. No copying or clicking. School Chromebooks usually don't allow extensions, so use copy and paste there.</p>`}
   </div>
   <div class="panel" style="display:flex;flex-direction:column;gap:8px">
     <h2>iPhone <span class="small muted" style="font-family:var(--body);font-weight:400">(one-time setup, about 4 minutes)</span></h2>
@@ -1008,6 +1003,11 @@ function viewSV(){
       <li>Sign in to StudentVUE the normal way and open <b>Grade Book</b>.</li>
       <li>Click the <b>Send to Grade Lab</b> bookmark. It reads every class and grading period (about 10 seconds), then opens Grade Lab with everything synced.</li></ol>
     <p class="small" style="margin:0"><b>On an Android phone:</b> if Chrome on your phone is signed in to the same Google account as your computer, the bookmark is already there. On the StudentVUE Grade Book, tap the address bar, type <b>Send to Grade Lab</b>, and tap the bookmark in the list.</p>
+  </div>
+  <div class="panel" style="display:flex;flex-direction:column;gap:8px">
+    <h2>Automatic sync extension <span class="chip">Coming soon</span></h2>
+    <p class="small muted" style="margin:0">A Chrome extension that syncs your grades by itself whenever you open StudentVUE is on the way. It isn't available yet, so use one of the ways above for now.</p>
+    ${S.extSeen ? `<p class="small" style="margin:0">✓ A test version is installed in this browser and still syncs here.</p>` : ''}
   </div>`;
 }
 
