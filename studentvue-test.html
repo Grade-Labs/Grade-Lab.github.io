@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>StudentVUE Connection Test</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&display=swap">
+<style>
+:root{--bg:#f3f5f8;--surface:#fff;--sunk:#e8ecf2;--line:#d5dbe5;--fg:#16202e;--muted:#5b6778;--accent:#2f5bea;--accent-ink:#fff;--good:#1f8a4c;--bad:#c8313b;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif;--body:"Inter",system-ui,"Segoe UI",sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f141c;--surface:#171e29;--sunk:#1f2836;--line:#2c3748;--fg:#e7ecf3;--muted:#9aa6b8;--accent:#7b9bff;--accent-ink:#0c1220;--good:#4cc47e;--bad:#f2636c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f141c;--surface:#171e29;--sunk:#1f2836;--line:#2c3748;--fg:#e7ecf3;--muted:#9aa6b8;--accent:#7b9bff;--accent-ink:#0c1220;--good:#4cc47e;--bad:#f2636c;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45}
+.wrap{max-width:720px;margin:0 auto;padding:20px 16px 60px;display:flex;flex-direction:column;gap:16px}
+h1,h2{font-family:var(--display);margin:0}
+h1{font-size:1.7rem;font-weight:800} h2{font-size:1.15rem;font-weight:600}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.muted{color:var(--muted)} .small{font-size:.85rem}
+label{font-weight:600;font-size:.9rem}
+input{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--fg);width:100%}
+button{font:inherit;font-weight:600;padding:10px 16px;border-radius:10px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);cursor:pointer;align-self:flex-start}
+button:disabled{opacity:.6;cursor:default}
+.res{display:flex;gap:10px;align-items:flex-start}
+.dot{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:var(--sunk);color:var(--muted)}
+.ok .dot{background:var(--good);color:#fff} .no .dot{background:var(--bad);color:#fff}
+table{border-collapse:collapse;width:100%;font-size:.9rem} td,th{text-align:left;padding:6px 4px;border-bottom:1px solid var(--line)}
+code{background:var(--sunk);border-radius:6px;padding:1px 5px;font-size:.85em;word-break:break-word}
+ul{margin:0;padding-left:20px}
+.err{color:var(--bad);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>StudentVUE connection test</h1>
+  <p class="muted" style="margin:0">This page only tests whether Grade Lab can sign in to MCPS StudentVUE and read your grades. It does not change anything in Grade Lab.</p>
+
+  <div class="card">
+    <h2>Where your Student ID and password go</h2>
+    <ul class="small">
+      <li>They are sent once, over an encrypted HTTPS connection, to Grade Lab's server program <code>studentvue-test</code> in Grade Lab's Supabase project (<code>ibqiwhgvwuizxpwefwqq.supabase.co</code>).</li>
+      <li>That program sends them to one place only: MCPS StudentVUE at <code>md-mcps-psv.edupoint.com</code>, to sign in.</li>
+      <li>Nothing is saved: not in Supabase, not in this browser, not in any log. The boxes are cleared as soon as you press the button.</li>
+      <li>What comes back to this page: two yes/no results, your class names with their current grade, assignment counts, and the names of StudentVUE's data fields. No tokens, no password, no personal details.</li>
+      <li>Your Grade Lab grades and account data are not read or changed.</li>
+    </ul>
+  </div>
+
+  <form class="card" id="f" autocomplete="off">
+    <div id="signin" class="small"></div>
+    <label for="sid">Student ID (6 or 8 digits)</label>
+    <input id="sid" inputmode="numeric" pattern="\d{6,8}" maxlength="8" autocomplete="off" spellcheck="false" required>
+    <label for="spw">StudentVUE password</label>
+    <input id="spw" type="password" autocomplete="off" required>
+    <button id="go" type="submit">Run the test</button>
+    <div id="status" class="small muted" role="status" aria-live="polite"></div>
+  </form>
+
+  <div class="card" id="results" hidden>
+    <h2>Results</h2>
+    <div class="res" id="r1"><div class="dot">1</div><div><b>Sign-in to StudentVUE</b><div class="small" id="r1t"></div></div></div>
+    <div class="res" id="r2"><div class="dot">2</div><div><b>Reading grades</b><div class="small" id="r2t"></div></div></div>
+    <div id="classes"></div>
+    <div id="fields" class="small"></div>
+    <p class="small muted" style="margin:0">To share the result with Claude, copy the <b>Summary for Claude</b> box below. It has no class names or grades.</p>
+    <textarea id="summary" readonly rows="8" style="font:12px/1.4 ui-monospace,monospace;width:100%;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--sunk);color:var(--fg)"></textarea>
+  </div>
+</div>
+<script>
+(function(){
+  'use strict';
+  const FN_URL = 'https://ibqiwhgvwuizxpwefwqq.supabase.co/functions/v1/studentvue-test';
+  const PUBLIC_KEY = 'sb_publishable_Hoxr1aZF1AUQ2oijv-XMxQ_mhVdjA4D'; // Grade Lab's public key (safe to show)
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  // Uses the Grade Lab sign-in already in this browser. Read only: this page never writes to browser storage.
+  function gradeLabSession(){
+    try{ const s = JSON.parse(localStorage.getItem('gradelab.auth') || 'null'); return s && s.access_token ? s : null; }catch(e){ return null; }
+  }
+  function showSignin(){
+    const s = gradeLabSession();
+    const fresh = s && (!s.expires_at || s.expires_at * 1000 - Date.now() > 60000);
+    $('signin').innerHTML = fresh
+      ? 'Signed in to Grade Lab' + (s.user && s.user.email ? ' as ' + esc(s.user.email) : '') + '.'
+      : '<span class="err">Open Grade Lab in this browser and sign in first, then come back and reload this page.</span>';
+    $('go').disabled = !fresh;
+    return fresh ? s : null;
+  }
+  showSignin();
+
+  function setRes(n, ok, text){
+    const el = $('r' + n); el.className = 'res ' + (ok === true ? 'ok' : ok === false ? 'no' : '');
+    el.querySelector('.dot').textContent = ok === true ? '✓' : ok === false ? '✕' : String(n);
+    $('r' + n + 't').textContent = text || '';
+  }
+
+  $('f').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const s = showSignin(); if(!s) return;
+    const studentId = $('sid').value.trim(), password = $('spw').value;
+    $('sid').value = ''; $('spw').value = '';   // clear the boxes right away
+    if(!/^\d{6,8}$/.test(studentId) || !password){ $('status').innerHTML = '<span class="err">Enter a 6 or 8 digit Student ID and your password.</span>'; return; }
+    $('go').disabled = true; $('status').textContent = 'Signing in to StudentVUE and reading your grade book. This can take up to 30 seconds…';
+    $('results').hidden = true; $('classes').innerHTML = ''; $('fields').innerHTML = ''; $('summary').value = '';
+    let r, j = null;
+    try{
+      r = await fetch(FN_URL, {method:'POST', headers:{'Content-Type':'application/json', apikey:PUBLIC_KEY, Authorization:'Bearer ' + s.access_token},
+        body: JSON.stringify({studentId, password})});
+      try{ j = await r.json(); }catch(e){}
+    }catch(e){
+      $('status').innerHTML = '<span class="err">Couldn\'t reach Grade Lab\'s server. Check your internet connection. On a school network it may be blocked.</span>';
+      $('go').disabled = false; return;
+    }
+    $('go').disabled = false;
+    if(!r.ok || !j || !j.signIn){
+      $('status').innerHTML = '<span class="err">' + esc((j && j.error) || ('The test server answered with error ' + r.status + '.')) + '</span>'; return;
+    }
+    $('status').textContent = 'Done.';
+    $('results').hidden = false;
+    setRes(1, j.signIn.ok, j.signIn.detail);
+    const g = j.grades || {};
+    setRes(2, j.signIn.ok ? g.ok : null, j.signIn.ok ? g.detail : 'Skipped, because sign-in did not work.');
+    if(g.classes && g.classes.length){
+      $('classes').innerHTML = '<table><thead><tr><th>Period</th><th>Class</th><th>Grade</th><th>Assignments</th></tr></thead><tbody>' +
+        g.classes.map(c => '<tr><td>' + esc(c.period) + '</td><td>' + esc(c.name) + '</td><td>' + esc(c.grade) + (c.percent ? ' (' + esc(c.percent) + ')' : '') + '</td><td>' + esc(c.assignments) + '</td></tr>').join('') +
+        '</tbody></table><p class="small muted" style="margin:6px 0 0">Grading period: ' + esc(g.period || 'not stated') + (g.periods && g.periods.length ? ' · available: ' + esc(g.periods.join(', ')) : '') + '</p>';
+    }
+    const f = g.fields || {};
+    if(f.assignment && f.assignment.length){
+      $('fields').innerHTML = 'StudentVUE assignment fields: <code>' + esc(f.assignment.join(', ')) + '</code>';
+    }
+    // Summary for Claude: results and field names only. No class names, grades, IDs or tokens.
+    $('summary').value = JSON.stringify({
+      signIn: j.signIn,
+      grades: {ok:g.ok, detail:g.detail, scheduleNote:g.scheduleNote, period:g.period, periods:g.periods,
+        classCount:(g.classes || []).length, assignmentCounts:(g.classes || []).map(c => c.assignments),
+        gradeShown:(g.classes || []).map(c => !!c.grade), fields:f}
+    }, null, 1);
+  });
+})();
+</script>
+</body>
+</html>
