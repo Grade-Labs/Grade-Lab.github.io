@@ -121,6 +121,203 @@ th{font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;
 
 <div class="wrap" id="app"></div>
 
+<!-- StudentVUE gradebook parser (window.SvueGrades). Pure, no network, no credentials. -->
+<script>
+/* Grade Lab — StudentVUE gradebook parser.
+ * Turns StudentVUE's JSON "Gradebook" responses into the GRADELAB1 v2 payload
+ * that importPayload()/applyImport2() already understand, so grade math, dedup
+ * (match by period|name) and cloud save are unchanged. NOTE: assignment field
+ * names are read defensively (several known spellings) because MCPS's exact
+ * fields are not yet verified against a real response. */
+(function (root) {
+  'use strict';
+  function firstDefined(obj, keys) {
+    if (!obj) return undefined;
+    for (const k of keys) if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k];
+    return undefined;
+  }
+  function num(v) {
+    if (v === null || v === undefined) return null;
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    const s = String(v).trim();
+    if (!/^-?\d*\.?\d+$/.test(s)) return null;
+    const n = parseFloat(s);
+    return isFinite(n) ? n : null;
+  }
+  function splitPoints(v) {
+    if (v == null) return null;
+    const m = String(v).match(/^\s*([\d.]+)?\s*\/\s*([\d.]+)\s*$/);
+    if (!m) return null;
+    return { score: m[1] !== undefined ? num(m[1]) : null, max: num(m[2]) };
+  }
+  function asArray(v) {
+    if (Array.isArray(v)) return v;
+    if (v && typeof v === 'object') {
+      const inner = v.Assignment || v.assignment || v.AssignmentGradeCalc || v.assignmentGradeCalc;
+      if (inner) return Array.isArray(inner) ? inner : [inner];
+    }
+    return [];
+  }
+  function readCategories(mark) {
+    const summary = firstDefined(mark, ['gradeCalculationSummary', 'GradeCalculationSummary']);
+    const rows = asArray(summary);
+    const cats = [];
+    for (const r of rows) {
+      const name = firstDefined(r, ['type', 'Type', 'name', 'Name']);
+      if (name == null) continue;
+      const weightRaw = firstDefined(r, ['weight', 'Weight', 'weightedPct', 'WeightedPercentage']);
+      const w = num(String(weightRaw).replace('%', '')) || 0;
+      if (String(name).trim().toUpperCase() === 'TOTAL') continue;
+      cats.push({ name: String(name), weight: w });
+    }
+    return cats;
+  }
+  function readAssignment(a) {
+    const name = firstDefined(a, ['measure', 'Measure', 'assignmentName', 'name', 'Name', 'title', 'gradeBookId']);
+    const type = firstDefined(a, ['type', 'Type', 'category', 'Category', 'measureType', 'MeasureTypeName']);
+    const date = firstDefined(a, ['date', 'Date', 'dueDate', 'DueDate', 'dateDue']) || '';
+    let score = num(firstDefined(a, ['score', 'Score', 'points', 'Points']));
+    let max = num(firstDefined(a, ['pointsPossible', 'PointsPossible', 'maxValue', 'MaxValue', 'pointPossible']));
+    if (score === null || max === null) {
+      const combined = splitPoints(firstDefined(a, ['points', 'Points', 'pointsEarnedAndPossible']));
+      if (combined) {
+        if (score === null) score = combined.score;
+        if (max === null) max = combined.max;
+      }
+    }
+    return { name: name != null ? String(name) : 'Assignment', date: String(date), type: type != null ? String(type) : '', score, max };
+  }
+  function isGraded(a) {
+    const notForGrading = a && (a.notForGrading === true || a.isForGrading === false || a.hideInPortal === true || a.excused === true);
+    return !notForGrading;
+  }
+  function markToTermData(mark) {
+    const cats = readCategories(mark);
+    const asg = asArray(firstDefined(mark, ['assignments', 'Assignments'])).filter(isGraded).map(readAssignment);
+    const pct = num(firstDefined(mark, ['calculatedScoreRaw', 'CalculatedScoreRaw']));
+    return { pct: pct === null ? null : pct, cats, asg };
+  }
+  function parseGradebook(response) {
+    const gb = (response && response.data && response.data.traditionalGradebook) || (response && response.traditionalGradebook) || response;
+    if (!gb || !Array.isArray(firstDefined(gb, ['courses', 'Courses']))) {
+      throw new Error('That response has no traditional grade book. (standardsGradebook or an empty answer.)');
+    }
+    const periodName = (() => {
+      const rp = firstDefined(gb, ['reportingPeriod', 'ReportingPeriod']);
+      return (rp && String(firstDefined(rp, ['gradePeriod', 'GradePeriod']) || '')) || '';
+    })();
+    const courses = firstDefined(gb, ['courses', 'Courses']) || [];
+    const classes = courses.map((c) => {
+      const marks = asArray(firstDefined(c, ['marks', 'Marks']));
+      const mark = marks[0] || {};
+      return {
+        period: String(firstDefined(c, ['period', 'Period']) || ''),
+        name: String(firstDefined(c, ['title', 'Title', 'courseName', 'CourseName']) || ''),
+        teacher: String(firstDefined(c, ['staff', 'Staff', 'teacher', 'Teacher']) || ''),
+        room: String(firstDefined(c, ['room', 'Room']) || ''),
+        td: markToTermData(mark),
+      };
+    });
+    return { periodName, classes };
+  }
+  function reportingPeriods(response) {
+    const gb = (response && response.data && response.data.traditionalGradebook) || (response && response.traditionalGradebook) || response;
+    const rps = (gb && firstDefined(gb, ['reportingPeriods', 'ReportingPeriods'])) || [];
+    return asArray(rps).map((r) => ({
+      index: String(firstDefined(r, ['index', 'Index']) ?? ''),
+      name: String(firstDefined(r, ['gradePeriod', 'GradePeriod']) || ''),
+    })).filter((r) => r.name);
+  }
+  function buildPayload(perPeriod, opts) {
+    opts = opts || {};
+    const periods = [];
+    const classMap = new Map();
+    for (const pp of perPeriod) {
+      if (pp.periodName && !periods.includes(pp.periodName)) periods.push(pp.periodName);
+      for (const c of pp.classes) {
+        const key = (c.period || '') + '|' + c.name;
+        let obj = classMap.get(key);
+        if (!obj) { obj = { period: c.period, name: c.name, teacher: c.teacher, room: c.room, terms: {} }; classMap.set(key, obj); }
+        if (pp.periodName) obj.terms[pp.periodName] = c.td;
+      }
+    }
+    return { v: 2, at: opts.at || Date.now(), school: opts.school || '',
+      current: opts.current || periods[periods.length - 1] || '', periods, classes: Array.from(classMap.values()) };
+  }
+  function toImportString(payload) { return 'GRADELAB1:' + JSON.stringify(payload); }
+  const api = { parseGradebook, reportingPeriods, buildPayload, toImportString };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.SvueGrades = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+
+<!-- StudentVUE connection layer (window.SvueProvider). Modular seam; ships nullProvider only. -->
+<script>
+/* Grade Lab — StudentVUE connection layer (modular).
+ * The UI and import pipeline only ever talk to a "provider" through the
+ * interface below; they never know how sign-in happens, which keeps auth
+ * swappable. Shipped: only nullProvider, which reports honestly that no
+ * authorized direct sign-in method is available yet. The sign-in call itself
+ * is the single piece that cannot be built with any method available today,
+ * so no working remote provider is included. */
+(function (root) {
+  'use strict';
+  class ProviderError extends Error {
+    constructor(message, code) { super(message); this.name = 'ProviderError'; this.code = code || 'provider_error'; }
+  }
+  const nullProvider = {
+    id: 'null',
+    label: 'StudentVUE (not available yet)',
+    configured: () => false,
+    async connect() {
+      throw new ProviderError(
+        'Direct StudentVUE sign-in is not available yet. Grade Lab is ready for it, but no authorized connection method is in place. Use another sync method for now.',
+        'no_provider'
+      );
+    },
+    async listPeriods() { throw new ProviderError('Not connected.', 'no_provider'); },
+    async fetchGradebook() { throw new ProviderError('Not connected.', 'no_provider'); },
+    async disconnect() { /* nothing stored */ },
+  };
+  const registry = new Map([[nullProvider.id, nullProvider]]);
+  function register(provider) {
+    if (!provider || !provider.id) throw new Error('A provider needs an id.');
+    for (const m of ['configured', 'connect', 'listPeriods', 'fetchGradebook', 'disconnect']) {
+      if (typeof provider[m] !== 'function') throw new Error(`Provider ${provider.id} is missing ${m}().`);
+    }
+    registry.set(provider.id, provider);
+    return provider;
+  }
+  function active() {
+    for (const p of registry.values()) if (p.id !== 'null' && p.configured()) return p;
+    return nullProvider;
+  }
+  async function syncAll({ provider, grades, creds, onStatus, school }) {
+    const prov = provider || active();
+    const say = onStatus || (() => {});
+    say('Signing in to StudentVUE…');
+    const session = await prov.connect(creds);
+    try {
+      say('Reading your grading periods…');
+      const periods = await prov.listPeriods(session);
+      const parsed = [];
+      for (const p of periods) {
+        say(`Reading ${p.name}…`);
+        const raw = await prov.fetchGradebook(session, p.index);
+        parsed.push(grades.parseGradebook(raw));
+      }
+      const payload = grades.buildPayload(parsed, { school: school || '', at: Date.now() });
+      return grades.toImportString(payload);
+    } finally {
+      try { await prov.disconnect(session); } catch (_) {}
+    }
+  }
+  const api = { ProviderError, nullProvider, register, active, registry, syncAll };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.SvueProvider = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+
 <script>
 (function(){
 const KEY = 'gradelab.v1';
@@ -152,7 +349,7 @@ function load(){ try{ const t = localStorage.getItem(KEY); return t ? JSON.parse
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} cloudOnSave(); }
 
 let S = load() || sample();
-const ui = {view:'home', tab:'grades', cid:null, wi:false, edit:false, confirm:null, starget:89.5, sv:{msg:'', err:'', copied:false}};
+const ui = {view:'home', tab:'grades', cid:null, wi:false, edit:false, confirm:null, starget:89.5, sv:{msg:'', err:'', copied:false, conn:false, cBusy:false, cMsg:'', cErr:''}};
 
 /* ---------- Accounts: save grades to your account so they show up on any device ----------
    Uses a free Supabase project. Put its Project URL and its publishable (or "anon public") key below.
@@ -718,7 +915,9 @@ app.addEventListener('click', e => {
     case 'cancel': ui.confirm=null; break;
     case 'delClass': S.classes = S.classes.filter(x=>x.id!==c.id); ui.view='home'; ui.edit=false; ui.confirm=null; break;
     case 'tab': ui.tab=b.dataset.id; break;
-    case 'sv': ui.view='sv'; ui.sv.err=''; ui.sv.msg=''; ui.sv.copied=false; break;
+    case 'sv': ui.view='sv'; ui.sv.err=''; ui.sv.msg=''; ui.sv.copied=false; ui.sv.cErr=''; ui.sv.cBusy=false; break;
+    case 'svConnect': svConnect(); return;
+    case 'svDisconnect': svDisconnect(); return;
     case 'copyBM': { const ta = document.getElementById('bm-code'); const done = () => { ui.sv.copied = true; render(); };
       try{ navigator.clipboard.writeText(BM_HREF).then(done, () => { ta.hidden = false; ta.select(); }); }catch(err){ ta.hidden = false; ta.select(); } return; }
     case 'copySC': { const ta = document.getElementById('sc-code'); const done = () => { ui.sv.sccopied = true; render(); };
@@ -948,6 +1147,94 @@ function importText(text, period){
   S.svLast = Date.now(); save();
   return msg;
 }
+/* ---------- Direct "Connect StudentVUE" (modular provider seam) ----------
+   Grade Lab talks only to a provider through window.SvueProvider. The shipped
+   default is nullProvider, which reports honestly that no authorized direct
+   sign-in method is available yet, so the Connect card shows that state and the
+   copy/paste, bookmark and shortcut methods stay the way in. A mock provider is
+   registered ONLY when the URL has ?svtest=1, purely to exercise the pipeline
+   end to end, and it is always labelled a demo — never shown as a real
+   StudentVUE connection. Nothing here stores a password: syncAll() signs in,
+   reads, and drops the session in memory. */
+const SV_TEST = /[?&]svtest=1(&|$)/.test(location.search);
+function svProv(){ return (window.SvueProvider && window.SvueProvider.active) ? window.SvueProvider.active() : null; }
+function svConfigured(){ const p = svProv(); return !!(p && p.configured && p.configured()); }
+if(SV_TEST && window.SvueProvider){
+  // DEMO / TEST ONLY (see note above). Returns sample grades; keeps no password.
+  const mockGB = period => ({ data:{ traditionalGradebook:{
+    reportingPeriods:[{index:'0',gradePeriod:'MP1'},{index:'1',gradePeriod:'MP2'}],
+    reportingPeriod:{ gradePeriod:period },
+    courses:[
+      { period:'1', title:'AP Calculus AB', staff:'Ms. Lee', room:'210', marks:[{ markName:period, calculatedScoreRaw: period==='MP1'?'93.4':'91',
+        gradeCalculationSummary:[{type:'All Tasks / Assessments',weight:'90%'},{type:'Practice / Preparation',weight:'10%'}],
+        assignments:[{measure:period==='MP1'?'Unit 1 Test':'Unit 3 Test',type:'All Tasks / Assessments',date:'09/12/2026',score:'46',pointsPossible:'50'},
+                     {measure:'HW 1.1',type:'Practice / Preparation',date:'09/05/2026',points:'10 / 10'}]}]},
+      { period:'2', title:'English 10', staff:'Mr. Diaz', room:'114', marks:[{ markName:period, calculatedScoreRaw:'88',
+        gradeCalculationSummary:[], assignments:[{measure:'Essay 1',type:'Writing',date:'09/18/2026',points:'42 / 50'}]}]},
+    ]}}});
+  try{ window.SvueProvider.register({
+    id:'demo-mock', label:'Demo (mock StudentVUE)', configured:()=>true,
+    async connect({ studentId, password }){ await new Promise(r=>setTimeout(r,250));
+      if(!studentId || !password) throw new window.SvueProvider.ProviderError('Enter an ID and a password.', 'bad_input');
+      if(password==='wrong') throw new window.SvueProvider.ProviderError('StudentVUE said: Invalid user id or password.', 'bad_login');
+      return { studentId }; },
+    async listPeriods(){ return [{index:'0',name:'MP1'},{index:'1',name:'MP2'}]; },
+    async fetchGradebook(_s, i){ await new Promise(r=>setTimeout(r,200)); return mockGB(i==='0'?'MP1':'MP2'); },
+    async disconnect(){},
+  }); }catch(e){}
+}
+async function svConnect(){
+  const sv = ui.sv, prov = svProv();
+  if(!window.SvueProvider || !window.SvueGrades || !prov){ sv.cErr = 'The StudentVUE connection code did not load. Reload the page.'; render(); return; }
+  const idEl = document.getElementById('sv-id'), pwEl = document.getElementById('sv-pw');
+  const sid = idEl ? idEl.value.trim() : '', pw = pwEl ? pwEl.value : '';
+  sv.cBusy = true; sv.cErr = ''; sv.cMsg = ''; render();
+  try{
+    const str = await window.SvueProvider.syncAll({ provider:prov, grades:window.SvueGrades,
+      creds:{ studentId:sid, password:pw }, school:S.svSchool || '',
+      onStatus:m => { sv.cMsg = m; const el = document.getElementById('sv-cmsg'); if(el) el.textContent = m; } });
+    const n = importPayload(str);   // reuses existing dedup, grade math and cloud save unchanged
+    sv.conn = true; sv.cErr = ''; sv.cMsg = `Synced ${n} classes from StudentVUE.`; sv.err = ''; sv.msg = '';
+  }catch(err){ sv.conn = false; sv.cMsg = ''; sv.cErr = (err && err.message) || 'Could not connect to StudentVUE.'; }
+  finally{ sv.cBusy = false; if(pwEl) pwEl.value = ''; render(); }
+}
+function svDisconnect(){
+  const prov = svProv();
+  try{ if(prov && prov.disconnect) Promise.resolve(prov.disconnect()).catch(()=>{}); }catch(e){}
+  ui.sv.conn = false; ui.sv.cErr = ''; ui.sv.cMsg = 'Disconnected. Nothing was stored.';
+  const pwEl = document.getElementById('sv-pw'); if(pwEl) pwEl.value = '';
+  render();
+}
+function svConnectCard(){
+  const sv = ui.sv;
+  if(!svConfigured()){
+    // Shipped reality: no authorized direct sign-in method is in place.
+    return `
+  <div class="panel" style="display:flex;flex-direction:column;gap:8px">
+    <div class="row spread"><h2 style="margin:0">Connect StudentVUE</h2><span class="chip">Not available yet</span></div>
+    <p class="small muted" style="margin:0">Signing in to StudentVUE directly from Grade Lab isn't available yet. Grade Lab is built and ready for it, so when an approved sign-in method is in place your grades will import automatically right here, with nothing to copy or paste. For now, use one of the three ways below — they work today, and none of them ever sees your password.</p>
+  </div>`;
+  }
+  // Test-only path (?svtest=1): a demo/mock provider is registered. Always labelled a demo.
+  const dot = sv.cBusy ? 'var(--gC)' : sv.conn ? 'var(--gA)' : sv.cErr ? 'var(--gF)' : 'var(--muted)';
+  const statusText = sv.cBusy ? 'Working…' : sv.conn ? 'Synced (demo data)' : 'Not connected';
+  return `
+  <div class="panel" style="display:flex;flex-direction:column;gap:10px;border-color:var(--gD)">
+    <div class="row spread"><h2 style="margin:0">Connect StudentVUE</h2><span class="chip" style="background:var(--gD);color:#fff">Demo / test only</span></div>
+    <p class="small" style="margin:0;color:var(--gD)"><b>This is a test connection using sample data — not a real StudentVUE sign-in.</b> Don't type a real password. It exists only to exercise the import pipeline.</p>
+    <div class="row" style="gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:${dot};display:inline-block"></span><span class="small" id="sv-ctext">${esc(statusText)}</span></div>
+    <label class="label" for="sv-id">Student ID</label>
+    <input id="sv-id" inputmode="numeric" placeholder="123456" value="123456" style="padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);width:100%">
+    <label class="label" for="sv-pw">StudentVUE password (demo — type anything)</label>
+    <input id="sv-pw" type="password" placeholder="••••••••" style="padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);width:100%">
+    <div class="row" style="gap:8px">
+      <button class="btn primary" data-act="svConnect" ${sv.cBusy?'disabled':''}>${sv.conn?'Refresh grades':'Connect &amp; sync'}</button>
+      ${sv.conn?'<button class="btn ghost" data-act="svDisconnect">Disconnect</button>':''}
+    </div>
+    ${sv.cErr?`<div class="small" style="color:var(--gF)">${esc(sv.cErr)}</div>`:''}
+    <div class="small muted" id="sv-cmsg" aria-live="polite">${esc(sv.cMsg||'')}</div>
+  </div>`;
+}
 function viewSV(){
   const sv = ui.sv;
   return `
@@ -956,6 +1243,7 @@ function viewSV(){
   <div class="banner"><span>Grade Lab only knows your grades from your last sync, so sync with StudentVUE regularly (copy and paste, the bookmark or the iPhone shortcut) to see your newest grades. Pick whichever of the 3 ways below works on your device.</span></div>
   ${sv.err ? `<div class="banner" style="background:var(--sunk);color:var(--gF)">${esc(sv.err)}</div>` : ''}
   ${sv.msg ? `<div class="banner"><span>✓ ${esc(sv.msg)}</span> <button class="btn" data-act="home">See my classes</button></div>` : ''}
+  ${svConnectCard()}
   <div class="panel" style="display:flex;flex-direction:column;gap:10px">
     <h2>Copy and paste <span class="small muted" style="font-family:var(--body);font-weight:400">(works anywhere, including school Chromebooks)</span></h2>
     <ol style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px">
